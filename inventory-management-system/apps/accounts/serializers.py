@@ -1,7 +1,17 @@
-from django.contrib.auth import get_user_model
+from django.contrib.auth import get_user_model, authenticate
 from rest_framework import serializers
+from rest_framework_simplejwt.tokens import RefreshToken
+
+
 
 User = get_user_model()
+
+
+class UserSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = User
+        fields = ["id", "email", "first_name", "last_name", "phone"]
+
 
 class UserRegistrationSerializer(serializers.ModelSerializer):
     
@@ -39,3 +49,30 @@ class UserRegistrationSerializer(serializers.ModelSerializer):
         password = validated_data.pop("password")
         user = User.objects.create_user(password=password, **validated_data)
         return user
+
+class UserLoginSerializer(serializers.Serializer):
+    
+    email = serializers.EmailField()
+    
+    password = serializers.CharField(write_only=True)
+    
+    def validate(self, attrs):
+        
+        email = attrs.get("email")
+        password = attrs.get("password")
+        
+        user = authenticate(username=email, password=password)
+        
+        if user is None:
+            raise serializers.ValidationError({"Login Error": "Invalid email or password."})
+        
+        if not user.is_active:
+            raise serializers.ValidationError({"Login Error": "User is not active."})
+        
+        refresh = RefreshToken.for_user(user)
+
+        return {
+            "user": UserSerializer(user).data,
+            "access_token": str(refresh.access_token),
+            "refresh_token": str(refresh),
+        }
