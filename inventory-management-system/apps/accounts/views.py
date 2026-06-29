@@ -1,4 +1,5 @@
 from decimal import ExtendedContext
+from pydoc import describe
 from rest_framework import status
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response 
@@ -6,7 +7,7 @@ from rest_framework.views import APIView
 
 from drf_spectacular.utils import (extend_schema,)
 
-from .serializers import UserRegistrationSerializer, UserLoginSerializer, UserSerializer, UserLogoutSerializer
+from .serializers import UserProfileUpdateSerializer, UserRegistrationSerializer, UserLoginSerializer, UserSerializer, UserLogoutSerializer, UserProfileUpdateSerializer
 
 from .services import AuthenticationService
 
@@ -132,21 +133,18 @@ class UserLogoutAPIView(APIView):
         
 @extend_schema(
     summary="Get Current User",
-    description="Get the current user",
+    description="Get or update the current user",
+    request=UserProfileUpdateSerializer,
     responses={200: UserSerializer},
+    methods=["GET", "PUT", "PATCH"],
 )
 
 class CurrentUserAPIView(APIView):
-    
     permission_classes = [IsAuthenticated]
     
     def get(self, request):
         
-        user = AuthenticationService.get_current_user(request.user)
-        
-        serializer = UserSerializer(user)
-        
-        print(serializer)
+        serializer= UserSerializer(request.user)
         
         return Response(
             {
@@ -158,3 +156,40 @@ class CurrentUserAPIView(APIView):
             },
             status=status.HTTP_200_OK
         )
+        
+    def put(self, request):
+        
+        serializer= UserProfileUpdateSerializer(request.user, data=request.data)
+        
+        serializer.is_valid(raise_exception=True)
+        
+        user = AuthenticationService.update_profile(request.user, serializer.validated_data)
+        
+        return Response(
+            {
+                "message": "Current user updated successfully",
+                "data": {
+                    "user": UserSerializer(user).data,
+                },
+                "error": None
+            },
+            status=status.HTTP_200_OK
+        ) 
+        
+    def patch(self, request):
+        serializer = UserProfileUpdateSerializer(request.user, data=request.data, partial=True)
+        
+        serializer.is_valid(raise_exception=True)
+        
+        user = AuthenticationService.update_profile(request.user, serializer.validated_data)
+        
+        return Response(
+            {
+                "message": "Current user updated successfully",
+                "data": {
+                    "user": UserSerializer(user).data,
+                },
+                "error": None
+            },
+            status=status.HTTP_200_OK
+        ) 
