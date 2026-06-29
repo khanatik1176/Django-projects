@@ -6,6 +6,7 @@ from rest_framework.views import APIView
 from drf_spectacular.utils import (extend_schema,)
 
 from .serializers import UserRegistrationSerializer, UserLoginSerializer
+from .services import AuthenticationService
 
 @extend_schema(
     summary="User Registration",
@@ -52,10 +53,13 @@ class UserLoginAPIView(APIView):
         
         serializer.is_valid(raise_exception=True)
         
+        data = AuthenticationService.login(email=serializer.validated_data["email"], password=serializer.validated_data["password"])
+        
         return Response(
             {
                 "message": "User logged in successfully",
-                "data": serializer.validated_data,
+                "data": data,
+                "error":serializer.errors if serializer.errors else None
             },
             status=status.HTTP_200_OK
         )
