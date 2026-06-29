@@ -7,6 +7,7 @@ from rest_framework.views import APIView
 from drf_spectacular.utils import extend_schema
 
 from .serializers import (
+    ChangePasswordSerializer,
     UserLoginSerializer,
     UserLogoutSerializer,
     UserProfileUpdateRequestSerializer,
@@ -211,6 +212,37 @@ class CurrentUserAPIView(APIView):
                 "data": {
                     "user": UserSerializer(serializer.instance).data,
                 },
+                "error": None,
+            },
+            status=status.HTTP_200_OK,
+        )
+
+@extend_schema(
+    summary="Change Password",
+    description="Change the current user's password",
+    request=ChangePasswordSerializer,
+    responses={200: ChangePasswordSerializer},
+)
+
+class ChangePasswordAPIView(APIView):
+    permission_classes = [IsAuthenticated]
+    
+    def put(self, request):
+        
+        serializer = ChangePasswordSerializer(data=request.data)
+        
+        serializer.is_valid(raise_exception=True)
+        
+        AuthenticationService.change_password(
+            user=request.user,
+            old_password=serializer.validated_data["old_password"],
+            new_password=serializer.validated_data["new_password"]
+        )
+        
+        return Response(
+            {
+                "message": "Password changed successfully",
+                "data": None,
                 "error": None,
             },
             status=status.HTTP_200_OK,

@@ -5,6 +5,8 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from .serializers import UserSerializer
 from .models import User
 
+from rest_framework.exceptions import ValidationError
+
 class AuthenticationService:
     
     @staticmethod
@@ -51,6 +53,26 @@ class AuthenticationService:
         
         for field, value in validated_data.items():
             setattr(user, field, value)
+        
+        user.save()
+        
+        return user
+    
+    @staticmethod
+    def change_password(
+        user,
+        old_password,
+        new_password
+    ):
+        
+        if not user.check_password(
+            old_password
+        ):
+            raise ValidationError(
+                {
+                    "old_password" : "Old password is incorrect."
+                }
+            )
         
         user.save()
         

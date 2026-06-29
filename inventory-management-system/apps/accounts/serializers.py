@@ -1,7 +1,7 @@
 from django.contrib.auth import get_user_model
 from rest_framework import serializers
 from rest_framework_simplejwt.tokens import RefreshToken
-
+from django.contrib.auth.password_validation import validate_password
 
 
 User = get_user_model()
@@ -108,3 +108,31 @@ class UserProfileUpdateRequestSerializer(serializers.Serializer):
     last_name = serializers.CharField(required=False)
     phone = serializers.CharField(required=False)
     profile_picture = serializers.ImageField(required=False)
+    
+
+class ChangePasswordSerializer(serializers.Serializer):
+    
+    old_password = serializers.CharField(write_only=True)
+    
+    new_password = serializers.CharField(write_only=True)
+    
+    confirm_password= serializers.CharField(write_only=True)
+    
+    def validate_new_password(self, value):
+        
+        validate_password(value)
+        
+        return value
+    
+    def validate(self, attrs):
+        
+        if attrs["new_password"] != attrs["confirm_password"]:
+            
+            raise serializers.ValidationError(
+                {
+                    "confirm_password": "Passwords do not match."
+                }
+            )
+        
+        return attrs
+    
