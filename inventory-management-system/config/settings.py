@@ -38,9 +38,10 @@ INSTALLED_APPS = [
     "django.contrib.sessions",
     "django.contrib.messages",
     "django.contrib.staticfiles",
-
     # Third Party Apps
     "rest_framework",
+    "rest_framework_simplejwt",
+    "rest_framework_simplejwt.token_blacklist",
     "drf_spectacular",
 
     # Local Apps
@@ -118,11 +119,7 @@ REST_FRAMEWORK = {
     ),
 }
 
-SPECTACULAR_SETTINGS = {
-    "TITLE": "Inventory Management API",
-    "DESCRIPTION": "Enterprise Inventory Management System",
-    "VERSION": "1.0.0",
-}
+SPECTACULAR_SETTINGS = { "TITLE": "Inventory Management API", "DESCRIPTION": "Enterprise Inventory Management System", "VERSION": "1.0.0", "SERVE_INCLUDE_SCHEMA": False, "SECURITY": [ { "BearerAuth": [], } ], "COMPONENTS": { "securitySchemes": { "BearerAuth": { "type": "http", "scheme": "bearer", "bearerFormat": "JWT", } } }, }
 
 AUTH_USER_MODEL = "accounts.User"
 

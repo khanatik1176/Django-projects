@@ -1,3 +1,4 @@
+from decimal import ExtendedContext
 from rest_framework import status
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response 
@@ -5,7 +6,8 @@ from rest_framework.views import APIView
 
 from drf_spectacular.utils import (extend_schema,)
 
-from .serializers import UserRegistrationSerializer, UserLoginSerializer, UserSerializer
+from .serializers import UserRegistrationSerializer, UserLoginSerializer, UserSerializer, UserLogoutSerializer
+
 from .services import AuthenticationService
 
 @extend_schema(
@@ -25,17 +27,20 @@ class UserRegistrationAPIView(APIView):
         serializer.is_valid(raise_exception=True)
 
         
-        data = AuthenticationService.register(email=serializer.validated_data["email"], password=serializer.validated_data["password"], first_name=serializer.validated_data["first_name"], last_name=serializer.validated_data["last_name"], phone=serializer.validated_data["phone"])
+        result = AuthenticationService.register(email=serializer.validated_data["email"], password=serializer.validated_data["password"], first_name=serializer.validated_data["first_name"], last_name=serializer.validated_data["last_name"], phone=serializer.validated_data["phone"])
+        
+        user_data = UserSerializer(result).data
         
         return Response(
             {
                 "message": "User registered successfully",
-                "data": data,
-                "error":serializer.errors if serializer.errors else None
+                "data": {
+                    "user": user_data,
+                },
+                "error": None
             },
             status=status.HTTP_201_CREATED
-        )
-        
+        )        
 
 @extend_schema(
     summary="User Login",
@@ -53,12 +58,18 @@ class UserLoginAPIView(APIView):
         
         serializer.is_valid(raise_exception=True)
         
-        data = AuthenticationService.login(email=serializer.validated_data["email"], password=serializer.validated_data["password"])
+        result = AuthenticationService.login(email=serializer.validated_data["email"], password=serializer.validated_data["password"])
+        
+        user_data = UserSerializer(result["user"]).data
         
         return Response(
             {
                 "message": "User logged in successfully",
-                "data": data,
+                "data": {
+                    "user": user_data,
+                    "access_token": result["access_token"],
+                    "refresh_token": result["refresh_token"],
+                },
                 "error":serializer.errors if serializer.errors else None
             },
             status=status.HTTP_200_OK
@@ -76,15 +87,45 @@ class UserListAPIView(APIView):
     permission_classes= [IsAuthenticated]
     
     def get(self, request):
-        data = AuthenticationService.list_users()
+        result = AuthenticationService.list_users()
+        
+        users_data = UserSerializer(result, many=True).data
         
         return Response(
             {
                 "message": "Users listed successfully",
-                "data": data,
+                "data": {
+                    "users": users_data,
+                },
                 "error": None
             },
             status=status.HTTP_200_OK
         )
+
+@extend_schema(
+    summary="User Logout",
+    description="Logout a user",
+    request=UserLogoutSerializer,
+    responses={200: UserLogoutSerializer},
+)
+
+class UserLogoutAPIView(APIView):
     
+    permission_classes= [IsAuthenticated]
     
+    def post(self, request):
+        
+        serializer = UserLogoutSerializer(data=request.data)
+        
+        serializer.is_valid(raise_exception=True)
+        
+        AuthenticationService.logout(serializer.validated_data["refresh"])
+        
+        return Response(
+            {
+                "message": "User logged out successfully",
+                "data": None,
+                "error": None
+            },
+            status=status.HTTP_200_OK
+        )
