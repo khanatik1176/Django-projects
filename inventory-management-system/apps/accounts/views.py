@@ -129,3 +129,32 @@ class UserLogoutAPIView(APIView):
             },
             status=status.HTTP_200_OK
         )
+        
+@extend_schema(
+    summary="Get Current User",
+    description="Get the current user",
+    responses={200: UserSerializer},
+)
+
+class CurrentUserAPIView(APIView):
+    
+    permission_classes = [IsAuthenticated]
+    
+    def get(self, request):
+        
+        user = AuthenticationService.get_current_user(request.user)
+        
+        serializer = UserSerializer(user)
+        
+        print(serializer)
+        
+        return Response(
+            {
+                "message": "Current user retrieved successfully",
+                "data": {
+                    "user": serializer.data,
+                },
+                "error": None
+            },
+            status=status.HTTP_200_OK
+        )

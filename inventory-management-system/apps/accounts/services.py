@@ -42,4 +42,6 @@ class AuthenticationService:
         token = RefreshToken(refresh_token)
         token.blacklist()
         
-        
+    @staticmethod
+    def get_current_user(user):
+        return user    
