@@ -1,6 +1,5 @@
-from django.contrib.auth import get_user_model, authenticate
+from django.contrib.auth import get_user_model
 from rest_framework import serializers
-from rest_framework_simplejwt.tokens import RefreshToken
 
 
 
@@ -43,12 +42,8 @@ class UserRegistrationSerializer(serializers.ModelSerializer):
                 {"password_error": "Passwords do not match."}
             )
         return attrs
-
-    def create(self, validated_data):
-        validated_data.pop("confirm_password")
-        password = validated_data.pop("password")
-        user = User.objects.create_user(password=password, **validated_data)
-        return user
+    
+    
 
 class UserLoginSerializer(serializers.Serializer):
     
