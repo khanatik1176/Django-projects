@@ -1,7 +1,6 @@
 from django.contrib.auth import get_user_model
 from rest_framework import serializers
 from rest_framework_simplejwt.tokens import RefreshToken
-from rest_framework import serializers
 
 
 
@@ -11,7 +10,7 @@ User = get_user_model()
 class UserSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
-        fields = ["id", "email", "first_name", "last_name", "phone"]
+        fields = ["id", "email", "first_name", "last_name", "phone", "profile_picture"]
 
 
 class UserRegistrationSerializer(serializers.ModelSerializer):
@@ -72,15 +71,40 @@ class UserLogoutSerializer(serializers.Serializer):
     
 
 class UserProfileUpdateSerializer(serializers.ModelSerializer):
-    
+
+    profile_picture = serializers.ImageField(required=False, allow_null=True)
+
     class Meta:
         model = User
-        
-        fields = ["first_name", "last_name", "phone"]
-        
-    
+        fields = ["first_name", "last_name", "phone", "profile_picture"]
+
     def validate_phone(self, value):
         if value and len(value) < 11:
             raise serializers.ValidationError("Phone number must be 11 digits long.")
         
         return value
+    
+    def validate_profile_picture(self, image):
+        if not image:
+            return image
+        
+        max_size = 2 * 1024 * 1024 # 2MB
+        
+        if image.size > max_size:
+            raise serializers.ValidationError("Image size must be less than 2MB.")
+        
+        allowed_extensions = (".jpg", ".jpeg", ".png", ".gif", ".webp")
+        
+        if not image.name.lower().endswith(allowed_extensions):
+            raise serializers.ValidationError("Invalid image format. Allowed formats are: JPG, JPEG, PNG, GIF, WEBP.")
+        
+        return image
+
+
+class UserProfileUpdateRequestSerializer(serializers.Serializer):
+    """OpenAPI-only serializer so Swagger shows a file upload for profile_picture."""
+
+    first_name = serializers.CharField(required=False)
+    last_name = serializers.CharField(required=False)
+    phone = serializers.CharField(required=False)
+    profile_picture = serializers.ImageField(required=False)
