@@ -16,7 +16,7 @@ from .serializers import (
     UserSerializer,
 )
 from .services import AuthenticationService
-
+from core.api_response import ApiResponse
 
 def _get_profile_update_data(request):
     data = request.data.copy()
@@ -49,15 +49,11 @@ class UserRegistrationAPIView(APIView):
 
         user_data = UserSerializer(result).data
 
-        return Response(
-            {
-                "message": "User registered successfully",
-                "data": {
-                    "user": user_data,
-                },
-                "error": None,
+        return ApiResponse.created(
+            message="User registered successfully",
+            data={
+                "user": user_data,
             },
-            status=status.HTTP_201_CREATED,
         )
 
 
@@ -82,17 +78,14 @@ class UserLoginAPIView(APIView):
 
         user_data = UserSerializer(result["user"]).data
 
-        return Response(
-            {
-                "message": "User logged in successfully",
-                "data": {
-                    "user": user_data,
-                    "access_token": result["access_token"],
-                    "refresh_token": result["refresh_token"],
-                },
-                "error": serializer.errors if serializer.errors else None,
+        return ApiResponse.success(
+            message="User logged in successfully",
+            data={
+                "user": user_data,
+                "access_token": result["access_token"],
+                "refresh_token": result["refresh_token"],
             },
-            status=status.HTTP_200_OK,
+            errors=serializer.errors if serializer.errors else None,
         )
 
 
@@ -108,15 +101,12 @@ class UserListAPIView(APIView):
         result = AuthenticationService.list_users()
         users_data = UserSerializer(result, many=True).data
 
-        return Response(
-            {
-                "message": "Users listed successfully",
-                "data": {
-                    "users": users_data,
-                },
-                "error": None,
+        return ApiResponse.success(
+            message="Users listed successfully",
+            data={
+                "users": users_data,
             },
-            status=status.HTTP_200_OK,
+            errors=None,
         )
 
 
@@ -135,13 +125,10 @@ class UserLogoutAPIView(APIView):
 
         AuthenticationService.logout(serializer.validated_data["refresh"])
 
-        return Response(
-            {
-                "message": "User logged out successfully",
-                "data": None,
-                "error": None,
-            },
-            status=status.HTTP_200_OK,
+        return ApiResponse.success(
+            message="User logged out successfully",
+            data=None,
+            errors=None,
         )
 
 
@@ -167,15 +154,12 @@ class CurrentUserAPIView(APIView):
     def get(self, request):
         serializer = UserSerializer(request.user)
 
-        return Response(
-            {
-                "message": "Current user retrieved successfully",
-                "data": {
-                    "user": serializer.data,
-                },
-                "error": None,
+        return ApiResponse.success(
+            message="Current user retrieved successfully",
+            data={
+                "user": serializer.data,
             },
-            status=status.HTTP_200_OK,
+            errors=None,
         )
 
     def put(self, request):
@@ -186,15 +170,12 @@ class CurrentUserAPIView(APIView):
         serializer.is_valid(raise_exception=True)
         serializer.save()
 
-        return Response(
-            {
-                "message": "Current user updated successfully",
-                "data": {
-                    "user": UserSerializer(serializer.instance).data,
-                },
-                "error": None,
+        return ApiResponse.success(
+            message="Current user updated successfully",
+            data={
+                "user": UserSerializer(serializer.instance).data,
             },
-            status=status.HTTP_200_OK,
+            errors=None,
         )
 
     def patch(self, request):
@@ -206,15 +187,12 @@ class CurrentUserAPIView(APIView):
         serializer.is_valid(raise_exception=True)
         serializer.save()
 
-        return Response(
-            {
-                "message": "Current user updated successfully",
-                "data": {
-                    "user": UserSerializer(serializer.instance).data,
-                },
-                "error": None,
+        return ApiResponse.success(
+            message="Current user updated successfully",
+            data={
+                "user": UserSerializer(serializer.instance).data,
             },
-            status=status.HTTP_200_OK,
+            errors=None,
         )
 
 @extend_schema(
@@ -239,11 +217,9 @@ class ChangePasswordAPIView(APIView):
             new_password=serializer.validated_data["new_password"]
         )
         
-        return Response(
-            {
-                "message": "Password changed successfully",
-                "data": None,
-                "error": None,
-            },
-            status=status.HTTP_200_OK,
+        return ApiResponse.success(
+            
+            message="Password changed successfully",
+            data=None,
+            errors=None,
         )
