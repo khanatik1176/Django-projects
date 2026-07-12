@@ -43,6 +43,7 @@ INSTALLED_APPS = [
     "rest_framework_simplejwt",
     "rest_framework_simplejwt.token_blacklist",
     "drf_spectacular",
+    "django_filters",
 
     # Local Apps
     "apps.accounts",
@@ -119,7 +120,10 @@ REST_FRAMEWORK = {
     ),
     "EXCEPTION_HANDLER": "core.exception_handler.custom_exception_handler",
     "DEFAULT_PAGINATION_CLASS": "core.pagination.CustomPagination", "PAGE_SIZE": 10,
+    
+    "DEFAULT_FILTER_BACKENDS": [ "django_filters.rest_framework.DjangoFilterBackend", "rest_framework.filters.SearchFilter", "rest_framework.filters.OrderingFilter", ],
 }
+
 
 SPECTACULAR_SETTINGS = {
     "TITLE": "Inventory Management API",
