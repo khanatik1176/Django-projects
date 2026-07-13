@@ -11,7 +11,7 @@ class Product(AuditModel):
     Represents a product
     """    
     
-    name = models.models.CharField(max_length=255)
+    name = models.CharField(max_length=255)
     sku= models.CharField(max_length=100, unique=True)
     barcode = models.CharField(max_length=100, unique=True, blank=True, null=True)
     category =models.ForeignKey(Category, on_delete=models.PROTECT, related_name="products")

@@ -13,7 +13,7 @@ class Brand(AuditModel):
     is_active= models.BooleanField(default=True)
     
     class Meta: 
-        dn_table = "product_brands"
+        db_table = "product_brands"
         ordering = ["name"]
         verbose_name = "Brand"
         verbose_name_plural = "Brands"
