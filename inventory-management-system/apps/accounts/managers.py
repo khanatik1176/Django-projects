@@ -22,6 +22,9 @@ class UserManager(BaseUserManager):
         extra_fields.setdefault("is_staff", True)
         extra_fields.setdefault("is_superuser", True)
         extra_fields.setdefault("is_active", True)
+
+        from apps.accounts.models import AccountStatus
+        extra_fields.setdefault("account_status", AccountStatus.ACTIVE)
         
         if extra_fields.get("is_staff") is not True:
             raise ValueError("SuperUser must have is_staff=True.")

@@ -15,7 +15,7 @@ class CategoryViewSet(BaseModelViewSet):
     
     search_fields = ["name", "description"]
     
-    filter_fields = ["is_active"]
+    filterset_fields = ["is_active"]
     
     ordering_fields = ["created_at", "updated_at"]
     

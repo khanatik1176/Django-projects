@@ -6,8 +6,12 @@ from rest_framework.views import APIView
 
 from drf_spectacular.utils import extend_schema
 
+from .permissions import CanManageConfig
 from .serializers import (
-    ChangePasswordSerializer,
+    AdminUserSerializer,
+    PasswordOTPRequestSerializer,
+    PasswordOTPVerifySerializer,
+    PasswordResetConfirmSerializer,
     UserLoginSerializer,
     UserLogoutSerializer,
     UserProfileUpdateRequestSerializer,
@@ -50,7 +54,7 @@ class UserRegistrationAPIView(APIView):
         user_data = UserSerializer(result).data
 
         return ApiResponse.created(
-            message="User registered successfully",
+            message="Registration submitted. An administrator will review your account before you can sign in.",
             data={
                 "user": user_data,
             },
@@ -95,11 +99,13 @@ class UserLoginAPIView(APIView):
     responses={200: UserSerializer},
 )
 class UserListAPIView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, CanManageConfig]
 
     def get(self, request):
-        result = AuthenticationService.list_users()
-        users_data = UserSerializer(result, many=True).data
+        from apps.accounts.user_management import UserManagementService
+
+        result = UserManagementService.list_users()
+        users_data = AdminUserSerializer(result, many=True).data
 
         return ApiResponse.success(
             message="Users listed successfully",
@@ -196,30 +202,63 @@ class CurrentUserAPIView(APIView):
         )
 
 @extend_schema(
-    summary="Change Password",
-    description="Change the current user's password",
-    request=ChangePasswordSerializer,
-    responses={200: ChangePasswordSerializer},
+    summary="Request password reset OTP",
+    description="Send a 6-digit verification code to the user's email.",
+    request=PasswordOTPRequestSerializer,
+    responses={200: PasswordOTPRequestSerializer},
+    auth=[],
 )
+class PasswordOTPRequestAPIView(APIView):
+    permission_classes = [AllowAny]
 
-class ChangePasswordAPIView(APIView):
-    permission_classes = [IsAuthenticated]
-    
-    def put(self, request):
-        
-        serializer = ChangePasswordSerializer(data=request.data)
-        
+    def post(self, request):
+        serializer = PasswordOTPRequestSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        
-        AuthenticationService.change_password(
-            user=request.user,
-            old_password=serializer.validated_data["old_password"],
-            new_password=serializer.validated_data["new_password"]
+        result = AuthenticationService.request_password_otp(
+            email=serializer.validated_data["email"]
         )
-        
+        return ApiResponse.success(message=result["message"], data=result)
+
+
+@extend_schema(
+    summary="Verify password reset OTP",
+    description="Verify the email code and receive a reset token.",
+    request=PasswordOTPVerifySerializer,
+    responses={200: PasswordOTPVerifySerializer},
+    auth=[],
+)
+class PasswordOTPVerifyAPIView(APIView):
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        serializer = PasswordOTPVerifySerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        result = AuthenticationService.verify_password_otp(
+            email=serializer.validated_data["email"],
+            code=serializer.validated_data["code"],
+        )
+        return ApiResponse.success(message=result["message"], data=result)
+
+
+@extend_schema(
+    summary="Confirm password reset",
+    description="Set a new password after email verification.",
+    request=PasswordResetConfirmSerializer,
+    responses={200: PasswordResetConfirmSerializer},
+    auth=[],
+)
+class PasswordResetConfirmAPIView(APIView):
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        serializer = PasswordResetConfirmSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        AuthenticationService.confirm_password_reset(
+            email=serializer.validated_data["email"],
+            reset_token=serializer.validated_data["reset_token"],
+            new_password=serializer.validated_data["new_password"],
+        )
         return ApiResponse.success(
-            
-            message="Password changed successfully",
+            message="Password updated successfully. You can sign in with your new password.",
             data=None,
-            errors=None,
         )

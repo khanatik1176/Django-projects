@@ -1,6 +1,8 @@
+from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
 
 from core.views.base import BaseModelViewSet
+from core.api_response import ApiResponse
 
 from apps.products.models import Product
 
@@ -25,6 +27,11 @@ class ProductViewSet(BaseModelViewSet):
         "supplier",
     )
 
+    permission_classes = [IsAuthenticated]
+    search_fields = ["name", "sku", "barcode"]
+    filterset_fields = ["category", "brand", "supplier", "is_active"]
+    ordering_fields = ["name", "created_at", "sku"]
+
     def get_serializer_class(self):
 
         if self.action == "list":
@@ -40,3 +47,23 @@ class ProductViewSet(BaseModelViewSet):
             return ProductUpdateSerializer
 
         return ProductDetailSerializer
+
+    @extend_schema(
+        summary="Lookup product by barcode",
+        description="Scan or enter a barcode to retrieve product details.",
+        responses={200: ProductDetailSerializer},
+    )
+    @action(detail=False, methods=["get"], url_path=r"by-barcode/(?P<barcode>[^/.]+)")
+    def by_barcode(self, request, barcode=None):
+        try:
+            product = self.get_queryset().get(barcode=barcode)
+        except Product.DoesNotExist:
+            return ApiResponse.error(
+                message="Product not found for this barcode.",
+                status_code=404,
+            )
+
+        return ApiResponse.success(
+            message="Product found.",
+            data=ProductDetailSerializer(product).data,
+        )

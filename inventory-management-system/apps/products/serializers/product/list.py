@@ -22,7 +22,12 @@ class ProductListSerializer(serializers.ModelSerializer):
             "id",
             "name",
             "sku",
+            "unit_of_measure",
+            "cost_price",
+            "selling_price",
             "category",
             "brand",
+            "is_perishable",
+            "shelf_life_days",
             "is_active",
         ]

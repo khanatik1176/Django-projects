@@ -15,7 +15,7 @@ class BrandViewSet(BaseModelViewSet):
     
     search_fields = ["name"]
     
-    filter_fields = ["is_active"]
+    filterset_fields = ["is_active"]
     
     ordering_fields = ["created_at", "updated_at"]
     
