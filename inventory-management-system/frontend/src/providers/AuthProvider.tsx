@@ -11,6 +11,7 @@ import {
 import { useRouter, usePathname } from "next/navigation";
 import { authStorage } from "@/lib/auth-storage";
 import { login as loginApi, logout as logoutApi } from "@/lib/api/auth";
+import { LoadingState } from "@/components/ui/PageHeader";
 import type { User } from "@/lib/types";
 
 interface AuthContextValue {
@@ -23,11 +24,17 @@ interface AuthContextValue {
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
-const publicRoutes = ["/", "/login", "/register"];
+/** Guest-only: logged-in users are redirected to the dashboard. */
+const guestOnlyRoutes = ["/", "/login", "/register"];
+
+function isGuestOnlyRoute(pathname: string) {
+  return guestOnlyRoutes.includes(pathname);
+}
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
+  const [allowed, setAllowed] = useState(false);
   const router = useRouter();
   const pathname = usePathname();
 
@@ -36,12 +43,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setUser(stored);
     setLoading(false);
 
-    const isPublic = publicRoutes.includes(pathname);
-    if (!stored && !isPublic) {
+    const guestOnly = isGuestOnlyRoute(pathname);
+
+    // Not logged in → block app routes (dashboard, etc.)
+    if (!stored && !guestOnly) {
+      setAllowed(false);
       router.replace("/login");
-    } else if (stored && (pathname === "/login" || pathname === "/register")) {
-      router.replace("/dashboard");
+      return;
     }
+
+    // Logged in → block landing, login, register
+    if (stored && guestOnly) {
+      setAllowed(false);
+      router.replace("/dashboard");
+      return;
+    }
+
+    setAllowed(true);
   }, [pathname, router]);
 
   const login = useCallback(
@@ -82,6 +100,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     () => ({ user, loading, login, logout, updateUser }),
     [user, loading, login, logout, updateUser],
   );
+
+  if (loading || !allowed) {
+    return (
+      <AuthContext.Provider value={value}>
+        <div className="flex min-h-dvh items-center justify-center bg-[#f4f6f3]">
+          <LoadingState />
+        </div>
+      </AuthContext.Provider>
+    );
+  }
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

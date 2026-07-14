@@ -12,6 +12,11 @@ export async function createRole(payload: {
   name: string;
   code: string;
   description?: string;
+  can_manage_users?: boolean;
+  can_manage_config?: boolean;
+  can_manage_inventory?: boolean;
+  can_manage_orders?: boolean;
+  can_view_reports?: boolean;
 }) {
   const { data } = await apiClient.post<ApiResponse<Role>>(
     "/accounts/roles/",

@@ -28,10 +28,11 @@ export async function receivePurchaseItem(
   orderId: number,
   itemId: number,
   quantity: number,
+  extras?: { expiry_date?: string; batch_number?: string },
 ) {
   const { data } = await apiClient.post<ApiResponse<PurchaseOrder>>(
     `/orders/purchase-orders/${orderId}/items/${itemId}/receive/`,
-    { quantity },
+    { quantity, ...extras },
   );
   return data;
 }
@@ -42,6 +43,17 @@ export async function getSalesOrders(params?: Record<string, string>) {
     { params },
   );
   return data;
+}
+
+export async function getSalesOrder(id: number) {
+  const { data } = await apiClient.get<ApiResponse<SalesOrder>>(
+    `/orders/sales-orders/${id}/`,
+  );
+  return data;
+}
+
+export async function getPosInvoices(params?: Record<string, string>) {
+  return getSalesOrders({ source: "pos", ordering: "-created_at", ...params });
 }
 
 export async function createSalesOrder(payload: Record<string, unknown>) {

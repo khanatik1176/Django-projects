@@ -1,38 +1,93 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import { AlertTriangle, Percent, Sparkles } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { AlertTriangle, Percent, ShoppingCart, Sparkles, Trash2 } from "lucide-react";
 import { getClearanceHub } from "@/lib/api/extras";
+import { getStockDetail, manageStock } from "@/lib/api/inventory";
 import { PageHeader, LoadingState, Alert } from "@/components/ui/PageHeader";
 import { Card, CardBody, CardHeader } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";
+import { Button } from "@/components/ui/Button";
 import { formatCurrency, formatDate, formatNumber } from "@/lib/utils";
-import type { ClearanceHub } from "@/lib/types";
+import type { ClearanceHub, ClearanceItem } from "@/lib/types";
 import { getErrorMessage } from "@/lib/api/client";
 
 export default function ClearancePage() {
+  const router = useRouter();
   const [data, setData] = useState<ClearanceHub | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
+  const [actionKey, setActionKey] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await getClearanceHub();
+      setData(res.data);
+    } catch (err) {
+      setError(getErrorMessage(err));
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
-    getClearanceHub()
-      .then((res) => setData(res.data))
-      .catch((err) => setError(getErrorMessage(err)))
-      .finally(() => setLoading(false));
-  }, []);
+    load();
+  }, [load]);
+
+  const sellAtClearance = async (item: ClearanceItem) => {
+    setActionKey(`${item.stock_id}-sell`);
+    setError("");
+    setSuccess("");
+    try {
+      const stock = await getStockDetail(item.stock_id);
+      const params = new URLSearchParams({
+        product: String(stock.data.product),
+        warehouse: String(stock.data.warehouse),
+        unit_price: item.clearance_price,
+        qty: "1",
+      });
+      router.push(`/pos?${params.toString()}`);
+    } catch (err) {
+      setError(getErrorMessage(err));
+    } finally {
+      setActionKey(null);
+    }
+  };
+
+  const writeOff = async (item: ClearanceItem) => {
+    setActionKey(`${item.stock_id}-writeoff`);
+    setError("");
+    setSuccess("");
+    try {
+      await manageStock(item.stock_id, {
+        action: "write_off_expired",
+        notes: "Clearance write-off",
+      });
+      setSuccess(`${item.product_name} written off successfully.`);
+      const res = await getClearanceHub();
+      setData(res.data);
+    } catch (err) {
+      setError(getErrorMessage(err));
+    } finally {
+      setActionKey(null);
+    }
+  };
 
   if (loading) return <LoadingState />;
 
   return (
     <div className="space-y-5">
       <PageHeader
-        title="Clearance & ছাড় Hub"
+        title="Clearance"
         description="Near-expiry markdown suggestions — reduce waste before write-off"
       />
 
       {error && <Alert message={error} />}
+      {success && <Alert type="success" message={success} />}
 
       {data && (
         <>
@@ -69,7 +124,7 @@ export default function ClearancePage() {
                       <th className="px-4 py-3">Qty</th>
                       <th className="px-4 py-3">ছাড়</th>
                       <th className="px-4 py-3">Clearance price</th>
-                      <th className="px-4 py-3">Action</th>
+                      <th className="px-4 py-3">Actions</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -92,10 +147,40 @@ export default function ClearancePage() {
                             {item.suggested_discount_percent}%
                           </Badge>
                         </td>
-                        <td className="px-4 py-3 font-medium text-[#0b6e4f]">
-                          {formatCurrency(item.clearance_price)}
+                        <td className="px-4 py-3">
+                          <p className="font-medium text-[#0b6e4f]">
+                            {formatCurrency(item.clearance_price)}
+                          </p>
+                          {Number(item.clearance_price) < Number(item.selling_price) && (
+                            <p className="text-xs text-[#5c6b63] line-through">
+                              {formatCurrency(item.selling_price)}
+                            </p>
+                          )}
                         </td>
-                        <td className="px-4 py-3 text-xs">{item.action}</td>
+                        <td className="px-4 py-3">
+                          <div className="flex flex-wrap gap-2">
+                            <Button
+                              size="sm"
+                              loading={actionKey === `${item.stock_id}-sell`}
+                              disabled={!!actionKey}
+                              onClick={() => sellAtClearance(item)}
+                            >
+                              <ShoppingCart className="h-3.5 w-3.5" />
+                              Sell at clearance
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="danger"
+                              loading={actionKey === `${item.stock_id}-writeoff`}
+                              disabled={!!actionKey}
+                              onClick={() => writeOff(item)}
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                              Write off
+                            </Button>
+                          </div>
+                          <p className="mt-1.5 text-xs text-[#5c6b63]">{item.action}</p>
+                        </td>
                       </tr>
                     ))}
                   </tbody>

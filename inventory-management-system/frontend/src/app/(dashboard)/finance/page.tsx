@@ -52,6 +52,21 @@ const PAYMENT_METHODS = [
   { value: "BANK", label: "Bank" },
 ];
 
+const PAYMENT_TYPES = [
+  { value: "", label: "All types" },
+  { value: "SALE_INCOME", label: "Sale income" },
+  { value: "CREDIT_SALE", label: "Credit sale (udhar)" },
+  { value: "CREDIT_COLLECTION", label: "Udhar collection" },
+  { value: "PURCHASE_PAYMENT", label: "Supplier payment" },
+  { value: "EXPENSE", label: "Expense" },
+  { value: "ADJUSTMENT", label: "Adjustment" },
+];
+
+const PAYMENT_METHOD_FILTER = [
+  { value: "", label: "All methods" },
+  ...PAYMENT_METHODS,
+];
+
 export default function FinancePage() {
   const [tab, setTab] = useState<Tab>("overview");
   const [summary, setSummary] = useState<FinanceSummary | null>(null);
@@ -61,6 +76,8 @@ export default function FinancePage() {
   const [error, setError] = useState("");
   const [showExpenseForm, setShowExpenseForm] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [paymentTypeFilter, setPaymentTypeFilter] = useState("");
+  const [paymentMethodFilter, setPaymentMethodFilter] = useState("");
   const { page, setPage, pageSize, onPageSizeChange, pagination, applyResponse } =
     useServerPagination(10);
 
@@ -78,14 +95,18 @@ export default function FinancePage() {
   }, []);
 
   const loadPayments = useCallback(async () => {
-    const res = await getPayments({
+    const params: Record<string, string> = {
       page: String(page),
       page_size: String(pageSize),
       ordering: "-created_at",
-    });
+    };
+    if (paymentTypeFilter) params.payment_type = paymentTypeFilter;
+    if (paymentMethodFilter) params.payment_method = paymentMethodFilter;
+
+    const res = await getPayments(params);
     setPayments(res.data.results);
     applyResponse(res.data);
-  }, [page, pageSize, applyResponse]);
+  }, [page, pageSize, paymentTypeFilter, paymentMethodFilter, applyResponse]);
 
   const loadExpenses = useCallback(async () => {
     const res = await getExpenses({
@@ -148,6 +169,9 @@ export default function FinancePage() {
       setError(getErrorMessage(err));
     }
   };
+
+  const hasUdharOutstanding = Number(summary?.udhar_outstanding ?? 0) > 0;
+  const hasMethodBreakdown = (summary?.payment_method_breakdown.length ?? 0) > 0;
 
   const revenueChart =
     summary?.daily_revenue.map((d, i) => ({
@@ -236,16 +260,59 @@ export default function FinancePage() {
                 <p className="mt-1 text-2xl font-bold text-[#14201a]">{formatCurrency(summary.month_expenses)}</p>
               </CardBody>
             </Card>
-            <Card>
+            <Card
+              className={
+                hasUdharOutstanding
+                  ? "border-amber-300 bg-gradient-to-br from-amber-50 to-amber-100/60 ring-2 ring-amber-200/80 sm:col-span-2 lg:col-span-1"
+                  : ""
+              }
+            >
               <CardBody>
-                <p className="flex items-center gap-2 text-xs text-[#5c6b63]">
+                <p className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-amber-800">
                   <Wallet className="h-4 w-4 text-amber-600" />
                   Udhar outstanding
                 </p>
-                <p className="mt-1 text-2xl font-bold text-amber-800">{formatCurrency(summary.udhar_outstanding)}</p>
+                <p
+                  className={`mt-1 font-bold text-amber-900 ${
+                    hasUdharOutstanding ? "text-3xl" : "text-2xl"
+                  }`}
+                >
+                  {formatCurrency(summary.udhar_outstanding)}
+                </p>
+                {hasUdharOutstanding && (
+                  <p className="mt-2 text-xs text-amber-800/80">
+                    Neighborhood credit still to collect — review Hal Khata.
+                  </p>
+                )}
               </CardBody>
             </Card>
           </div>
+
+          {hasMethodBreakdown && (
+            <Card className="border-[#0b6e4f]/25 bg-gradient-to-br from-[#f0faf5] to-white">
+              <CardHeader>
+                <h2 className="font-semibold text-[#14201a]">Payment method breakdown</h2>
+                <p className="text-xs text-[#5c6b63]">This month by channel</p>
+              </CardHeader>
+              <CardBody>
+                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                  {summary.payment_method_breakdown.map((row) => (
+                    <div
+                      key={row.payment_method}
+                      className="rounded-xl border border-[#d8e0d9] bg-white px-4 py-3"
+                    >
+                      <p className="text-xs font-semibold uppercase tracking-wide text-[#5c6b63]">
+                        {row.payment_method}
+                      </p>
+                      <p className="mt-1 text-xl font-bold text-[#0b6e4f]">
+                        {formatCurrency(row.total)}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              </CardBody>
+            </Card>
+          )}
 
           <div className="grid gap-4 lg:grid-cols-2">
             <Card>
@@ -266,17 +333,10 @@ export default function FinancePage() {
                 <h2 className="font-semibold">Month net · {formatCurrency(summary.month_net)}</h2>
                 <p className="text-xs text-[#5c6b63]">Revenue minus expenses this month</p>
               </CardHeader>
-              <CardBody className="space-y-2">
-                {summary.payment_method_breakdown.length === 0 ? (
-                  <p className="text-sm text-[#5c6b63]">No payment breakdown yet.</p>
-                ) : (
-                  summary.payment_method_breakdown.map((row) => (
-                    <div key={row.payment_method} className="flex justify-between text-sm">
-                      <span className="text-[#5c6b63]">{row.payment_method}</span>
-                      <span className="font-medium">{formatCurrency(row.total)}</span>
-                    </div>
-                  ))
-                )}
+              <CardBody>
+                <p className="text-sm text-[#5c6b63]">
+                  {formatCurrency(summary.month_revenue)} revenue − {formatCurrency(summary.month_expenses)} expenses
+                </p>
               </CardBody>
             </Card>
           </div>
@@ -305,7 +365,32 @@ export default function FinancePage() {
           </Card>
         </>
       ) : tab === "payments" ? (
-        <Card>
+        <>
+          <Card>
+            <CardBody>
+              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                <Select
+                  label="Payment type"
+                  options={PAYMENT_TYPES}
+                  value={paymentTypeFilter}
+                  onChange={(e) => {
+                    setPaymentTypeFilter(e.target.value);
+                    setPage(1);
+                  }}
+                />
+                <Select
+                  label="Payment method"
+                  options={PAYMENT_METHOD_FILTER}
+                  value={paymentMethodFilter}
+                  onChange={(e) => {
+                    setPaymentMethodFilter(e.target.value);
+                    setPage(1);
+                  }}
+                />
+              </div>
+            </CardBody>
+          </Card>
+          <Card>
           <CardBody className="p-0">
             {payments.length === 0 ? (
               <EmptyState title="No payments" description="POS sales and udhar collections appear here." />
@@ -347,6 +432,7 @@ export default function FinancePage() {
             )}
           </CardBody>
         </Card>
+        </>
       ) : (
         <Card>
           <CardBody className="p-0">

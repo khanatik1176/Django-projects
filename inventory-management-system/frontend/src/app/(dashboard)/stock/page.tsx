@@ -1,8 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import Link from "next/link";
 import { useForm } from "react-hook-form";
-import { PackagePlus, Pencil } from "lucide-react";
+import { PackagePlus, Pencil, ShoppingCart } from "lucide-react";
 import { getStock, receiveStock } from "@/lib/api/inventory";
 import { getProducts } from "@/lib/api/products";
 import { getWarehouses } from "@/lib/api/inventory";
@@ -53,6 +54,7 @@ export default function StockPage() {
   const [success, setSuccess] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [healthFilter, setHealthFilter] = useState<"all" | StockHealthStatus>("all");
+  const [warehouseFilter, setWarehouseFilter] = useState("");
   const [editingStock, setEditingStock] = useState<Stock | null>(null);
   const {
     page,
@@ -76,6 +78,7 @@ export default function StockPage() {
         page_size: String(pageSize),
       };
       if (healthFilter !== "all") params.health_status = healthFilter;
+      if (warehouseFilter) params.warehouse = warehouseFilter;
 
       const [s, p, w] = await Promise.all([
         getStock(params),
@@ -91,7 +94,7 @@ export default function StockPage() {
     } finally {
       setLoading(false);
     }
-  }, [page, pageSize, healthFilter, applyResponse]);
+  }, [page, pageSize, healthFilter, warehouseFilter, applyResponse]);
 
   useEffect(() => {
     load();
@@ -188,6 +191,32 @@ export default function StockPage() {
         onClose={() => setEditingStock(null)}
         onUpdated={load}
       />
+
+      <div className="mb-4 flex flex-wrap items-end gap-3">
+        <div className="w-full sm:w-56">
+          <Select
+            label="Warehouse"
+            options={[
+              { value: "", label: "All warehouses" },
+              ...warehouses.map((w) => ({ value: String(w.id), label: w.name })),
+            ]}
+            value={warehouseFilter}
+            onChange={(e) => {
+              setWarehouseFilter(e.target.value);
+              resetPage();
+            }}
+          />
+        </div>
+        {healthFilter === "LOW_STOCK" && (
+          <Link
+            href="/purchase-orders"
+            className="inline-flex cursor-pointer items-center gap-2 rounded-xl border border-[#d8e0d9] bg-white px-4 py-2.5 text-sm font-medium text-[#14201a] shadow-sm transition hover:border-[#0b6e4f]/35 hover:bg-[#ecf1ed]"
+          >
+            <ShoppingCart className="h-4 w-4" />
+            Create PO
+          </Link>
+        )}
+      </div>
 
       <div className="mb-4 flex flex-wrap gap-2">
         {healthFilters.map((f) => (

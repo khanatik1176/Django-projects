@@ -68,6 +68,8 @@ class PurchaseOrderViewSet(BaseModelViewSet):
             item_id=item.id,
             quantity=serializer.validated_data["quantity"],
             user=request.user,
+            expiry_date=serializer.validated_data.get("expiry_date"),
+            batch_number=serializer.validated_data.get("batch_number") or "",
         )
 
         po = PurchaseOrder.objects.prefetch_related("items__product").get(pk=pk)

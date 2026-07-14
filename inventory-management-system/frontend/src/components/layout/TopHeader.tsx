@@ -12,6 +12,8 @@ const titles: Record<string, string> = {
   "/products": "Products",
   "/warehouses": "Warehouses",
   "/stock": "Stock",
+  "/clearance": "Clearance",
+  "/udhar": "Hal Khata",
   "/movements": "Movements",
   "/purchase-orders": "Purchase Orders",
   "/sales-orders": "Sales Orders",

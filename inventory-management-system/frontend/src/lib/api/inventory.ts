@@ -32,6 +32,21 @@ export async function createWarehouse(payload: Record<string, unknown>) {
   return data;
 }
 
+export async function updateWarehouse(id: number, payload: Record<string, unknown>) {
+  const { data } = await apiClient.patch<ApiResponse<Warehouse>>(
+    `/inventory/warehouses/${id}/`,
+    payload,
+  );
+  return data;
+}
+
+export async function deleteWarehouse(id: number) {
+  const { data } = await apiClient.delete<ApiResponse<null>>(
+    `/inventory/warehouses/${id}/`,
+  );
+  return data;
+}
+
 export async function getStock(params?: Record<string, string>) {
   const { data } = await apiClient.get<ApiResponse<PaginatedData<Stock>>>(
     "/inventory/stock/",
@@ -77,6 +92,41 @@ export async function receiveStock(payload: Record<string, unknown>) {
   const { data } = await apiClient.post<ApiResponse<unknown>>(
     "/inventory/stock/receive/",
     payload,
+  );
+  return data;
+}
+
+export async function issueStock(payload: {
+  product_id: number;
+  warehouse_id: number;
+  quantity: string | number;
+  reference_number?: string;
+  notes?: string;
+}) {
+  const { data } = await apiClient.post<ApiResponse<unknown>>(
+    "/inventory/stock/issue/",
+    payload,
+  );
+  return data;
+}
+
+export async function adjustStock(payload: {
+  product_id: number;
+  warehouse_id: number;
+  new_quantity: string | number;
+  notes?: string;
+}) {
+  const { data } = await apiClient.post<ApiResponse<unknown>>(
+    "/inventory/stock/adjust/",
+    payload,
+  );
+  return data;
+}
+
+export async function getExpiringBatches(withinDays = 14) {
+  const { data } = await apiClient.get<ApiResponse<unknown>>(
+    "/inventory/stock/expiring/",
+    { params: { within_days: String(withinDays) } },
   );
   return data;
 }

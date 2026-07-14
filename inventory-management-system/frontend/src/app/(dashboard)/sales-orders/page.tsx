@@ -10,6 +10,7 @@ import {
   fulfillSalesItem,
   cancelSalesOrder,
 } from "@/lib/api/orders";
+import { getCustomers, type Customer } from "@/lib/api/customers";
 import { getWarehouses } from "@/lib/api/inventory";
 import { getProducts } from "@/lib/api/products";
 import { PageHeader, LoadingState, EmptyState, Alert } from "@/components/ui/PageHeader";
@@ -25,12 +26,17 @@ import type { SalesOrder, Warehouse, Product } from "@/lib/types";
 import { getErrorMessage } from "@/lib/api/client";
 
 interface SOForm {
+  hal_khata_customer?: string;
   customer_name: string;
   customer_email?: string;
   customer_phone?: string;
   warehouse: string;
   order_date: string;
   items: { product: string; quantity_ordered: string; unit_price: string }[];
+}
+
+function hasReservedField(items: SalesOrder["items"]) {
+  return items.some((item) => item.quantity_reserved !== undefined);
 }
 
 const emptyPagination = {
@@ -43,6 +49,7 @@ export default function SalesOrdersPage() {
   const [orders, setOrders] = useState<SalesOrder[]>([]);
   const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
+  const [khataCustomers, setKhataCustomers] = useState<Customer[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [error, setError] = useState("");
@@ -52,7 +59,7 @@ export default function SalesOrdersPage() {
   const [pagination, setPagination] = useState(emptyPagination);
   const [expandedId, setExpandedId] = useState<number | null>(null);
 
-  const { register, handleSubmit, control, reset } = useForm<SOForm>({
+  const { register, handleSubmit, control, reset, setValue } = useForm<SOForm>({
     defaultValues: {
       order_date: new Date().toISOString().split("T")[0],
       items: [{ product: "", quantity_ordered: "", unit_price: "" }],
@@ -83,12 +90,14 @@ export default function SalesOrdersPage() {
 
   const loadMeta = useCallback(async () => {
     try {
-      const [w, p] = await Promise.all([
+      const [w, p, c] = await Promise.all([
         getWarehouses({ page_size: "100" }),
         getProducts({ page_size: "100" }),
+        getCustomers({ page_size: "200", ordering: "name" }),
       ]);
       setWarehouses(w.data.results);
       setProducts(p.data.results);
+      setKhataCustomers(c.data.results);
     } catch (err) {
       setError(getErrorMessage(err));
     }
@@ -207,6 +216,27 @@ export default function SalesOrdersPage() {
       >
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
           <div className="grid gap-4 sm:grid-cols-2">
+            <Select
+              label="Hal Khata customer (optional)"
+              options={[
+                { value: "", label: "Manual entry..." },
+                ...khataCustomers.map((c) => ({
+                  value: c.id,
+                  label: `${c.name}${c.phone ? ` · ${c.phone}` : ""}`,
+                })),
+              ]}
+              {...register("hal_khata_customer")}
+              onChange={(e) => {
+                const id = e.target.value;
+                setValue("hal_khata_customer", id);
+                if (!id) return;
+                const customer = khataCustomers.find((c) => String(c.id) === id);
+                if (customer) {
+                  setValue("customer_name", customer.name);
+                  setValue("customer_phone", customer.phone ?? "");
+                }
+              }}
+            />
             <Input label="Customer Name" {...register("customer_name", { required: true })} />
             <Input label="Email" type="email" {...register("customer_email")} />
             <Input label="Phone" {...register("customer_phone")} />
@@ -340,12 +370,20 @@ export default function SalesOrdersPage() {
                           {expanded && (
                             <tr className="bg-[#f8faf8]">
                               <td colSpan={9} className="px-4 py-3">
+                                {so.status === "DRAFT" && (
+                                  <p className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                                    Confirm this order to reserve available warehouse stock for each line item.
+                                  </p>
+                                )}
                                 <table className="w-full text-sm">
                                   <thead>
                                     <tr className="text-left text-[#5c6b63]">
                                       <th className="pb-2 pr-4 font-medium">Product</th>
                                       <th className="pb-2 pr-4 font-medium">SKU</th>
                                       <th className="pb-2 pr-4 font-medium">Ordered</th>
+                                      {hasReservedField(so.items) && (
+                                        <th className="pb-2 pr-4 font-medium">Reserved</th>
+                                      )}
                                       <th className="pb-2 pr-4 font-medium">Fulfilled</th>
                                       <th className="pb-2 pr-4 font-medium">Remaining</th>
                                       <th className="pb-2 font-medium">Action</th>
@@ -359,6 +397,11 @@ export default function SalesOrdersPage() {
                                           {item.product_sku}
                                         </td>
                                         <td className="py-2 pr-4">{formatNumber(item.quantity_ordered)}</td>
+                                        {hasReservedField(so.items) && (
+                                          <td className="py-2 pr-4">
+                                            {formatNumber(item.quantity_reserved ?? "0")}
+                                          </td>
+                                        )}
                                         <td className="py-2 pr-4">{formatNumber(item.quantity_fulfilled)}</td>
                                         <td className="py-2 pr-4">{formatNumber(item.quantity_remaining)}</td>
                                         <td className="py-2">

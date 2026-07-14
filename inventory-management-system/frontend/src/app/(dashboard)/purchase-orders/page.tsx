@@ -48,6 +48,17 @@ export default function PurchaseOrdersPage() {
   const [showForm, setShowForm] = useState(false);
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [receiveModal, setReceiveModal] = useState<{
+    orderId: number;
+    itemId: number;
+    remaining: string;
+    productName: string;
+    isPerishable?: boolean;
+  } | null>(null);
+  const [receiveQty, setReceiveQty] = useState("");
+  const [receiveBatch, setReceiveBatch] = useState("");
+  const [receiveExpiry, setReceiveExpiry] = useState("");
+  const [receiving, setReceiving] = useState(false);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
   const [pagination, setPagination] = useState(emptyPagination);
@@ -150,13 +161,40 @@ export default function PurchaseOrdersPage() {
     }
   };
 
-  const handleReceive = async (orderId: number, itemId: number, remaining: string) => {
+  const openReceive = (
+    orderId: number,
+    itemId: number,
+    remaining: string,
+    productName: string,
+    isPerishable?: boolean,
+  ) => {
+    setReceiveModal({ orderId, itemId, remaining, productName, isPerishable });
+    setReceiveQty(remaining);
+    setReceiveBatch("");
+    setReceiveExpiry("");
     setError("");
+  };
+
+  const handleReceive = async () => {
+    if (!receiveModal) return;
+    setError("");
+    setReceiving(true);
     try {
-      await receivePurchaseItem(orderId, itemId, Number(remaining));
+      await receivePurchaseItem(
+        receiveModal.orderId,
+        receiveModal.itemId,
+        Number(receiveQty),
+        {
+          ...(receiveExpiry ? { expiry_date: receiveExpiry } : {}),
+          ...(receiveBatch ? { batch_number: receiveBatch } : {}),
+        },
+      );
+      setReceiveModal(null);
       refresh();
     } catch (err) {
       setError(getErrorMessage(err));
+    } finally {
+      setReceiving(false);
     }
   };
 
@@ -275,6 +313,54 @@ export default function PurchaseOrdersPage() {
         </form>
       </Modal>
 
+      <Modal
+        open={!!receiveModal}
+        onClose={() => setReceiveModal(null)}
+        title="Receive stock"
+        description={
+          receiveModal
+            ? `${receiveModal.productName} · up to ${receiveModal.remaining} remaining`
+            : undefined
+        }
+      >
+        <div className="space-y-4">
+          <Input
+            label="Quantity"
+            type="number"
+            step="0.01"
+            value={receiveQty}
+            onChange={(e) => setReceiveQty(e.target.value)}
+          />
+          {receiveModal?.isPerishable && (
+            <>
+              <Input
+                label="Batch number"
+                value={receiveBatch}
+                onChange={(e) => setReceiveBatch(e.target.value)}
+                placeholder="Optional lot / batch"
+              />
+              <Input
+                label="Expiry date"
+                type="date"
+                value={receiveExpiry}
+                onChange={(e) => setReceiveExpiry(e.target.value)}
+              />
+              <p className="text-xs text-[#5c6b63]">
+                Perishable product — expiry enables FEFO picking and clearance alerts.
+              </p>
+            </>
+          )}
+          <div className="flex justify-end gap-2">
+            <Button type="button" variant="secondary" onClick={() => setReceiveModal(null)}>
+              Cancel
+            </Button>
+            <Button type="button" loading={receiving} onClick={handleReceive}>
+              Confirm receive
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
       <Card>
         <CardBody className="p-0">
           {loading ? (
@@ -375,10 +461,16 @@ export default function PurchaseOrdersPage() {
                                               size="sm"
                                               variant="secondary"
                                               onClick={() =>
-                                                handleReceive(po.id, item.id, item.quantity_remaining)
+                                                openReceive(
+                                                  po.id,
+                                                  item.id,
+                                                  item.quantity_remaining,
+                                                  item.product_name,
+                                                  item.is_perishable,
+                                                )
                                               }
                                             >
-                                              Receive All
+                                              Receive
                                             </Button>
                                           )}
                                         </td>

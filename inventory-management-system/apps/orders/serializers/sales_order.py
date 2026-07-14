@@ -55,12 +55,16 @@ class SalesOrderSerializer(serializers.ModelSerializer):
     total_revenue = serializers.DecimalField(
         max_digits=14, decimal_places=2, read_only=True
     )
+    is_pos = serializers.SerializerMethodField()
+    payment_method = serializers.SerializerMethodField()
+    invoice_number = serializers.CharField(source="so_number", read_only=True)
 
     class Meta:
         model = SalesOrder
         fields = [
             "id",
             "so_number",
+            "invoice_number",
             "customer_name",
             "customer_email",
             "customer_phone",
@@ -73,10 +77,21 @@ class SalesOrderSerializer(serializers.ModelSerializer):
             "total_ordered",
             "total_fulfilled",
             "total_revenue",
+            "is_pos",
+            "payment_method",
             "created_at",
             "updated_at",
         ]
         read_only_fields = ["id", "so_number", "status", "created_at", "updated_at"]
+
+    def get_is_pos(self, obj):
+        return bool(obj.notes and obj.notes.startswith("POS ·"))
+
+    def get_payment_method(self, obj):
+        if not obj.notes or not obj.notes.startswith("POS ·"):
+            return None
+        parts = obj.notes.split(" · ")
+        return parts[1] if len(parts) > 1 else None
 
 
 class SalesOrderCreateSerializer(serializers.ModelSerializer):

@@ -99,6 +99,8 @@ export interface Warehouse {
   name: string;
   code: string;
   address?: string;
+  contact_person?: string;
+  phone?: string;
   is_default: boolean;
   is_active: boolean;
 }
@@ -157,6 +159,7 @@ export interface StockMovement {
   quantity_before: string;
   quantity_after: string;
   reference_number?: string;
+  notes?: string;
   created_at: string;
 }
 
@@ -269,6 +272,7 @@ export interface PurchaseOrderItem {
   product: number;
   product_name: string;
   product_sku: string;
+  is_perishable?: boolean;
   quantity_ordered: string;
   quantity_received: string;
   quantity_remaining: string;
@@ -295,20 +299,31 @@ export interface SalesOrderItem {
   product_sku: string;
   quantity_ordered: string;
   quantity_fulfilled: string;
+  quantity_reserved?: string;
   quantity_remaining: string;
   unit_price: string;
+  line_total?: string;
 }
 
 export interface SalesOrder {
   id: number;
   so_number: string;
+  invoice_number?: string;
   customer_name: string;
+  customer_email?: string;
+  customer_phone?: string;
   warehouse: number;
   warehouse_name: string;
   status: string;
   order_date: string;
+  notes?: string;
   items: SalesOrderItem[];
+  total_ordered?: string;
+  total_fulfilled?: string;
   total_revenue: string;
+  is_pos?: boolean;
+  payment_method?: string | null;
+  created_at?: string;
 }
 
 export interface FinanceSummary {

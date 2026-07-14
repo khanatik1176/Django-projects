@@ -1,24 +1,32 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Barcode, CreditCard, Plus, ShoppingBag, Trash2 } from "lucide-react";
-import { getProductByBarcode, getProducts } from "@/lib/api/products";
-import { getWarehouses } from "@/lib/api/inventory";
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
+import { useSearchParams } from "next/navigation";
+import { Barcode, CreditCard, FileText, Printer, ShoppingBag, Trash2 } from "lucide-react";
+import { getProductByBarcode, getProduct, getProducts } from "@/lib/api/products";
+import { getStock, getWarehouses } from "@/lib/api/inventory";
 import { getCustomers } from "@/lib/api/customers";
 import { posCheckout } from "@/lib/api/extras";
-import { PageHeader, Alert } from "@/components/ui/PageHeader";
+import { PageHeader, Alert, LoadingState } from "@/components/ui/PageHeader";
 import { Card, CardBody } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
+import { Modal } from "@/components/ui/Modal";
+import {
+  InvoiceDocument,
+  invoiceFromPosCheckout,
+} from "@/components/invoices/InvoiceDocument";
 import { formatCurrency } from "@/lib/utils";
-import type { Product, Warehouse } from "@/lib/types";
+import type { Product, SalesOrder, Warehouse } from "@/lib/types";
 import type { Customer } from "@/lib/api/customers";
 import { getErrorMessage } from "@/lib/api/client";
 
 interface CartLine {
   product: Product;
   quantity: number;
+  unitPriceOverride?: string | null;
 }
 
 const payments = [
@@ -28,7 +36,14 @@ const payments = [
   { id: "CREDIT", label: "উধার Udhar" },
 ] as const;
 
-export default function POSPage() {
+function lineUnitPrice(line: CartLine): number {
+  return Number(line.unitPriceOverride ?? line.product.selling_price ?? 0);
+}
+
+function POSContent() {
+  const searchParams = useSearchParams();
+  const urlProcessed = useRef(false);
+
   const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [warehouseId, setWarehouseId] = useState("");
@@ -38,7 +53,10 @@ export default function POSPage() {
   const [customerId, setCustomerId] = useState("");
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+  const [lastInvoice, setLastInvoice] = useState<SalesOrder | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [availability, setAvailability] = useState<Record<number, string>>({});
+  const [bootstrapping, setBootstrapping] = useState(true);
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -50,15 +68,108 @@ export default function POSPage() {
       setCustomers(c.data.results);
       const def = w.data.results.find((x) => x.is_default) ?? w.data.results[0];
       if (def) setWarehouseId(String(def.id));
-    });
+    }).finally(() => setBootstrapping(false));
   }, []);
 
-  const total = useMemo(
-    () =>
-      cart.reduce(
-        (sum, line) => sum + line.quantity * Number(line.product.selling_price || 0),
-        0,
+  const addProductToCart = useCallback(
+    (product: Product, qty = 1, unitPriceOverride?: string | null) => {
+      setCart((prev) => {
+        const existing = prev.find((l) => l.product.id === product.id);
+        if (existing) {
+          return prev.map((l) =>
+            l.product.id === product.id
+              ? {
+                  ...l,
+                  quantity: l.quantity + qty,
+                  unitPriceOverride:
+                    unitPriceOverride !== undefined ? unitPriceOverride : l.unitPriceOverride,
+                }
+              : l,
+          );
+        }
+        return [
+          ...prev,
+          {
+            product,
+            quantity: Math.max(1, qty),
+            unitPriceOverride: unitPriceOverride ?? null,
+          },
+        ];
+      });
+    },
+    [],
+  );
+
+  useEffect(() => {
+    if (bootstrapping || urlProcessed.current) return;
+
+    const productId = searchParams.get("product");
+    if (!productId) return;
+
+    urlProcessed.current = true;
+
+    const warehouseParam = searchParams.get("warehouse");
+    const unitPrice = searchParams.get("unit_price");
+    const qtyParam = searchParams.get("qty");
+    const qty = Math.max(1, Number(qtyParam) || 1);
+
+    if (warehouseParam) setWarehouseId(warehouseParam);
+
+    getProduct(Number(productId))
+      .then((res) => {
+        addProductToCart(res.data, qty, unitPrice);
+        setSuccess(
+          unitPrice
+            ? `Clearance item added — ${formatCurrency(unitPrice)}`
+            : `${res.data.name} added to cart`,
+        );
+        inputRef.current?.focus();
+      })
+      .catch((err) => setError(getErrorMessage(err)));
+  }, [bootstrapping, searchParams, addProductToCart]);
+
+  const cartProductIds = useMemo(
+    () => cart.map((l) => l.product.id).join(","),
+    [cart],
+  );
+
+  useEffect(() => {
+    if (!warehouseId || cart.length === 0) {
+      setAvailability({});
+      return;
+    }
+
+    let cancelled = false;
+
+    Promise.all(
+      cart.map((line) =>
+        getStock({
+          product: String(line.product.id),
+          warehouse: warehouseId,
+          page_size: "1",
+        }).then((res) => ({
+          productId: line.product.id,
+          available: res.data.results[0]?.available_quantity ?? "0",
+        })),
       ),
+    )
+      .then((results) => {
+        if (cancelled) return;
+        setAvailability(
+          Object.fromEntries(results.map((r) => [r.productId, r.available])),
+        );
+      })
+      .catch(() => {
+        if (!cancelled) setAvailability({});
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [warehouseId, cartProductIds, cart.length]);
+
+  const total = useMemo(
+    () => cart.reduce((sum, line) => sum + line.quantity * lineUnitPrice(line), 0),
     [cart],
   );
 
@@ -81,21 +192,13 @@ export default function POSPage() {
         product = match;
       }
 
-      setCart((prev) => {
-        const existing = prev.find((l) => l.product.id === product.id);
-        if (existing) {
-          return prev.map((l) =>
-            l.product.id === product.id ? { ...l, quantity: l.quantity + 1 } : l,
-          );
-        }
-        return [...prev, { product, quantity: 1 }];
-      });
+      addProductToCart(product, 1);
       setBarcode("");
       inputRef.current?.focus();
     } catch (err) {
       setError(getErrorMessage(err));
     }
-  }, []);
+  }, [addProductToCart]);
 
   const checkout = async () => {
     if (!warehouseId || cart.length === 0) return;
@@ -110,10 +213,12 @@ export default function POSPage() {
         items: cart.map((l) => ({
           product_id: l.product.id,
           quantity: l.quantity,
-          unit_price: l.product.selling_price,
+          unit_price: String(lineUnitPrice(l)),
         })),
       });
-      setSuccess(`Sale ${res.data.so_number} · ${formatCurrency(res.data.total)}`);
+      const invoice = invoiceFromPosCheckout(res.data);
+      setLastInvoice(invoice);
+      setSuccess(`Invoice ${res.data.invoice_number || res.data.so_number} · ${formatCurrency(res.data.total)}`);
       setCart([]);
       setBarcode("");
       inputRef.current?.focus();
@@ -124,15 +229,56 @@ export default function POSPage() {
     }
   };
 
+  if (bootstrapping) return <LoadingState />;
+
   return (
     <div className="space-y-4">
       <PageHeader
         title="Counter POS"
         description="Barcode scan checkout — cash, bKash, Nagad, or উধার credit"
+        action={
+          <Link href="/invoices">
+            <Button variant="secondary">
+              <FileText className="h-4 w-4" />
+              Invoice Bank
+            </Button>
+          </Link>
+        }
       />
 
       {error && <Alert message={error} />}
       {success && <Alert type="success" message={success} />}
+
+      <Modal
+        open={!!lastInvoice}
+        onClose={() => setLastInvoice(null)}
+        title={`Invoice ${lastInvoice?.invoice_number || lastInvoice?.so_number || ""}`}
+        description="Sale completed — print the bill or open it in Invoice Bank"
+        size="xl"
+      >
+        {lastInvoice && (
+          <div className="space-y-4">
+            <InvoiceDocument invoice={lastInvoice} compact />
+            <div className="flex flex-wrap justify-end gap-2">
+              <Button variant="secondary" onClick={() => setLastInvoice(null)}>
+                New sale
+              </Button>
+              <Link href={`/invoices/${lastInvoice.id}`}>
+                <Button variant="secondary">
+                  <FileText className="h-4 w-4" />
+                  Open in bank
+                </Button>
+              </Link>
+              <Link href={`/invoices/${lastInvoice.id}?print=1`} target="_blank">
+                <Button>
+                  <Printer className="h-4 w-4" />
+                  Print invoice
+                </Button>
+              </Link>
+            </div>
+          </div>
+        )}
+      </Modal>
 
       <div className="grid gap-4 lg:grid-cols-5">
         <div className="space-y-4 lg:col-span-3">
@@ -179,57 +325,96 @@ export default function POSPage() {
                     <tr className="border-b border-[#ecf1ed] text-left text-[#5c6b63]">
                       <th className="px-4 py-3">Item</th>
                       <th className="px-4 py-3">Qty</th>
+                      <th className="px-4 py-3">Available</th>
                       <th className="px-4 py-3">Price</th>
                       <th className="px-4 py-3">Line</th>
                       <th className="px-4 py-3" />
                     </tr>
                   </thead>
                   <tbody>
-                    {cart.map((line) => (
-                      <tr key={line.product.id} className="border-b border-[#f4f6f3]">
-                        <td className="px-4 py-3">
-                          <p className="font-medium">{line.product.name}</p>
-                          <p className="text-xs text-[#5c6b63]">{line.product.sku}</p>
-                        </td>
-                        <td className="px-4 py-3">
-                          <input
-                            type="number"
-                            min={1}
-                            className="w-16 rounded border border-[#d8e0d9] px-2 py-1"
-                            value={line.quantity}
-                            onChange={(e) => {
-                              const qty = Math.max(1, Number(e.target.value) || 1);
-                              setCart((prev) =>
-                                prev.map((l) =>
-                                  l.product.id === line.product.id ? { ...l, quantity: qty } : l,
-                                ),
-                              );
-                            }}
-                          />
-                        </td>
-                        <td className="px-4 py-3">
-                          {formatCurrency(line.product.selling_price || 0)}
-                        </td>
-                        <td className="px-4 py-3 font-medium">
-                          {formatCurrency(
-                            line.quantity * Number(line.product.selling_price || 0),
-                          )}
-                        </td>
-                        <td className="px-4 py-3">
-                          <button
-                            type="button"
-                            onClick={() =>
-                              setCart((prev) =>
-                                prev.filter((l) => l.product.id !== line.product.id),
-                              )
-                            }
-                            className="text-rose-600"
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
+                    {cart.map((line) => {
+                      const unitPrice = lineUnitPrice(line);
+                      const sellingPrice = Number(line.product.selling_price || 0);
+                      const isClearance =
+                        line.unitPriceOverride != null &&
+                        Number(line.unitPriceOverride) !== sellingPrice;
+                      const available = Number(availability[line.product.id] ?? 0);
+                      const exceedsStock = line.quantity > available;
+                      const isPerishable = line.product.is_perishable;
+
+                      return (
+                        <tr key={line.product.id} className="border-b border-[#f4f6f3]">
+                          <td className="px-4 py-3">
+                            <p className="font-medium">{line.product.name}</p>
+                            <p className="text-xs text-[#5c6b63]">{line.product.sku}</p>
+                            {isPerishable && (
+                              <p className="mt-1 text-xs font-medium text-amber-600">
+                                Sold FEFO — oldest expiry first
+                              </p>
+                            )}
+                            {exceedsStock && (
+                              <p className="mt-1 text-xs font-medium text-amber-600">
+                                Qty exceeds available ({available} on hand)
+                              </p>
+                            )}
+                          </td>
+                          <td className="px-4 py-3">
+                            <input
+                              type="number"
+                              min={1}
+                              className="w-16 rounded border border-[#d8e0d9] px-2 py-1"
+                              value={line.quantity}
+                              onChange={(e) => {
+                                const qty = Math.max(1, Number(e.target.value) || 1);
+                                setCart((prev) =>
+                                  prev.map((l) =>
+                                    l.product.id === line.product.id ? { ...l, quantity: qty } : l,
+                                  ),
+                                );
+                              }}
+                            />
+                          </td>
+                          <td className="px-4 py-3">
+                            <span className={exceedsStock ? "font-medium text-amber-600" : ""}>
+                              {availability[line.product.id] != null
+                                ? available
+                                : "…"}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3">
+                            {isClearance ? (
+                              <div>
+                                <p className="font-medium text-[#0b6e4f]">
+                                  {formatCurrency(unitPrice)}
+                                </p>
+                                <p className="text-xs text-[#5c6b63] line-through">
+                                  {formatCurrency(sellingPrice)}
+                                </p>
+                                <p className="text-xs font-medium text-amber-600">Clearance</p>
+                              </div>
+                            ) : (
+                              formatCurrency(unitPrice)
+                            )}
+                          </td>
+                          <td className="px-4 py-3 font-medium">
+                            {formatCurrency(line.quantity * unitPrice)}
+                          </td>
+                          <td className="px-4 py-3">
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setCart((prev) =>
+                                  prev.filter((l) => l.product.id !== line.product.id),
+                                )
+                              }
+                              className="cursor-pointer text-rose-600"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               )}
@@ -251,7 +436,7 @@ export default function POSPage() {
                   key={p.id}
                   type="button"
                   onClick={() => setPayment(p.id)}
-                  className={`rounded-xl border px-3 py-2.5 text-xs font-semibold transition ${
+                  className={`cursor-pointer rounded-xl border px-3 py-2.5 text-xs font-semibold transition ${
                     payment === p.id
                       ? "border-[#0b6e4f] bg-[#e6f4ee] text-[#085340]"
                       : "border-[#ecf1ed] text-[#5c6b63]"
@@ -291,5 +476,13 @@ export default function POSPage() {
         </Card>
       </div>
     </div>
+  );
+}
+
+export default function POSPage() {
+  return (
+    <Suspense fallback={<LoadingState />}>
+      <POSContent />
+    </Suspense>
   );
 }

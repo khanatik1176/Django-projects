@@ -115,7 +115,7 @@ class PurchaseOrderService:
 
     @staticmethod
     @transaction.atomic
-    def receive_item(*, item_id, quantity, user):
+    def receive_item(*, item_id, quantity, user, expiry_date=None, batch_number=""):
         quantity = Decimal(str(quantity))
         if quantity <= 0:
             raise ValidationError({"quantity": "Quantity must be greater than zero."})
@@ -152,6 +152,8 @@ class PurchaseOrderService:
             user=user,
             reference_number=po.po_number,
             notes=f"PO receipt for {item.product.sku}",
+            expiry_date=expiry_date,
+            batch_number=batch_number or "",
         )
 
         item.quantity_received += quantity

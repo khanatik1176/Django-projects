@@ -27,6 +27,13 @@ class SalesOrderViewSet(BaseModelViewSet):
     ordering_fields = ["order_date", "created_at", "status"]
     http_method_names = ["get", "post", "head", "options"]
 
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        source = self.request.query_params.get("source")
+        if source == "pos":
+            queryset = queryset.filter(notes__startswith="POS ·")
+        return queryset
+
     def get_serializer_class(self):
         if self.action == "create":
             return SalesOrderCreateSerializer

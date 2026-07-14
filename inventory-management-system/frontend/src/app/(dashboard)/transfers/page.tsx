@@ -13,7 +13,7 @@ import {
 import { getProducts } from "@/lib/api/products";
 import { getWarehouses } from "@/lib/api/inventory";
 import { PageHeader, LoadingState, EmptyState, Alert } from "@/components/ui/PageHeader";
-import { Card, CardBody } from "@/components/ui/Card";
+import { Card, CardBody, CardHeader } from "@/components/ui/Card";
 import { Badge, statusVariant } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
@@ -42,7 +42,10 @@ export default function TransfersPage() {
   const [showForm, setShowForm] = useState(false);
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
-  const { page, setPage, pageSize, onPageSizeChange, pagination, applyResponse } =
+  const [statusFilter, setStatusFilter] = useState("");
+  const [fromWarehouse, setFromWarehouse] = useState("");
+  const [toWarehouse, setToWarehouse] = useState("");
+  const { page, setPage, pageSize, onPageSizeChange, pagination, applyResponse, resetPage } =
     useServerPagination(10);
 
   const { register, handleSubmit, reset, formState: { errors } } = useForm<TransferForm>();
@@ -50,10 +53,15 @@ export default function TransfersPage() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await getTransfers({
+      const params: Record<string, string> = {
         page: String(page),
         page_size: String(pageSize),
-      });
+      };
+      if (statusFilter) params.status = statusFilter;
+      if (fromWarehouse) params.from_warehouse = fromWarehouse;
+      if (toWarehouse) params.to_warehouse = toWarehouse;
+
+      const res = await getTransfers(params);
       setTransfers(res.data.results);
       applyResponse(res.data);
     } catch (err) {
@@ -61,7 +69,7 @@ export default function TransfersPage() {
     } finally {
       setLoading(false);
     }
-  }, [page, pageSize, applyResponse]);
+  }, [page, pageSize, statusFilter, fromWarehouse, toWarehouse, applyResponse]);
 
   useEffect(() => {
     load();
@@ -122,6 +130,48 @@ export default function TransfersPage() {
       </Modal>
 
       <Card>
+        <CardHeader>
+          <div className="grid gap-3 sm:grid-cols-3">
+            <Select
+              label="Status"
+              options={[
+                { value: "", label: "All statuses" },
+                { value: "PENDING", label: "Pending" },
+                { value: "COMPLETED", label: "Completed" },
+                { value: "CANCELLED", label: "Cancelled" },
+              ]}
+              value={statusFilter}
+              onChange={(e) => {
+                setStatusFilter(e.target.value);
+                resetPage();
+              }}
+            />
+            <Select
+              label="From warehouse"
+              options={[
+                { value: "", label: "All sources" },
+                ...warehouses.map((w) => ({ value: w.id, label: w.name })),
+              ]}
+              value={fromWarehouse}
+              onChange={(e) => {
+                setFromWarehouse(e.target.value);
+                resetPage();
+              }}
+            />
+            <Select
+              label="To warehouse"
+              options={[
+                { value: "", label: "All destinations" },
+                ...warehouses.map((w) => ({ value: w.id, label: w.name })),
+              ]}
+              value={toWarehouse}
+              onChange={(e) => {
+                setToWarehouse(e.target.value);
+                resetPage();
+              }}
+            />
+          </div>
+        </CardHeader>
         <CardBody className="p-0">
           {loading ? <LoadingState /> : transfers.length === 0 ? (
             <EmptyState title="No transfers" description="Move stock from godown to shop counter." />

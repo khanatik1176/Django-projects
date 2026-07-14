@@ -23,17 +23,21 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="min-h-dvh bg-[#f4f6f3] lg:pl-64">
-      <Sidebar open={menuOpen} onClose={() => setMenuOpen(false)} />
+      <div data-dashboard-chrome className="contents">
+        <Sidebar open={menuOpen} onClose={() => setMenuOpen(false)} />
+      </div>
 
       <div className="flex min-h-dvh min-w-0 flex-col">
-        <TopHeader onMenuOpen={() => setMenuOpen(true)} />
+        <div data-dashboard-chrome>
+          <TopHeader onMenuOpen={() => setMenuOpen(true)} />
+        </div>
 
         <main className="flex-1 overflow-auto">
           <motion.div
             initial={{ opacity: 0, y: 8 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.3 }}
-            className="w-full px-3 py-4 sm:px-4 sm:py-5 lg:px-5"
+            className="w-full px-3 py-4 sm:px-4 sm:py-5 lg:px-5 print:px-0 print:py-0"
           >
             {children}
           </motion.div>

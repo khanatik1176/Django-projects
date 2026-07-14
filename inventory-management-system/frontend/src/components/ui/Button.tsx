@@ -11,11 +11,11 @@ interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
 
 const variants = {
   primary:
-    "bg-[#0b6e4f] text-white hover:bg-[#085340] shadow-sm disabled:bg-[#0b6e4f]/50",
+    "bg-[#0b6e4f] text-white shadow-sm hover:bg-[#085340] hover:shadow-md disabled:bg-[#0b6e4f]/50",
   secondary:
-    "bg-white text-[#14201a] border border-[#d8e0d9] hover:bg-[#ecf1ed]",
+    "bg-white text-[#14201a] border border-[#d8e0d9] shadow-sm hover:bg-[#ecf1ed] hover:border-[#0b6e4f]/35",
   ghost: "bg-transparent text-[#5c6b63] hover:bg-[#ecf1ed] hover:text-[#14201a]",
-  danger: "bg-rose-600 text-white hover:bg-rose-500",
+  danger: "bg-rose-600 text-white shadow-sm hover:bg-rose-500 hover:shadow-md",
 };
 
 const sizes = {
@@ -41,7 +41,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
       ref={ref}
       disabled={disabled || loading}
       className={cn(
-        "inline-flex items-center justify-center gap-2 rounded-xl font-semibold transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[#0b6e4f]/35 disabled:cursor-not-allowed",
+        "inline-flex cursor-pointer items-center justify-center gap-2 rounded-xl font-semibold transition-all duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#0b6e4f]/35 disabled:cursor-not-allowed",
         variants[variant],
         sizes[size],
         className,

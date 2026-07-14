@@ -13,6 +13,7 @@ import {
   getRoles,
   unbanUser,
   updateAdminUser,
+  updateRole,
 } from "@/lib/api/configuration";
 import { PageHeader, LoadingState, EmptyState, Alert } from "@/components/ui/PageHeader";
 import { Card, CardBody } from "@/components/ui/Card";
@@ -45,6 +46,78 @@ interface RoleForm {
   name: string;
   code: string;
   description?: string;
+  can_manage_users: boolean;
+  can_manage_config: boolean;
+  can_manage_inventory: boolean;
+  can_manage_orders: boolean;
+  can_view_reports: boolean;
+}
+
+const PERMISSION_FIELDS: {
+  key: keyof Pick<
+    RoleForm,
+    | "can_manage_users"
+    | "can_manage_config"
+    | "can_manage_inventory"
+    | "can_manage_orders"
+    | "can_view_reports"
+  >;
+  label: string;
+  description: string;
+}[] = [
+  { key: "can_manage_users", label: "Manage users", description: "Approve, ban, and assign roles" },
+  { key: "can_manage_config", label: "Manage configuration", description: "Access this settings page" },
+  { key: "can_manage_inventory", label: "Manage inventory", description: "Stock, products, warehouses" },
+  { key: "can_manage_orders", label: "Manage orders", description: "Purchase and sales orders" },
+  { key: "can_view_reports", label: "View reports", description: "Valuation and ABC reports" },
+];
+
+const defaultRolePermissions: Pick<
+  RoleForm,
+  | "can_manage_users"
+  | "can_manage_config"
+  | "can_manage_inventory"
+  | "can_manage_orders"
+  | "can_view_reports"
+> = {
+  can_manage_users: false,
+  can_manage_config: false,
+  can_manage_inventory: false,
+  can_manage_orders: false,
+  can_view_reports: false,
+};
+
+function PermissionCheckboxes({
+  values,
+  onChange,
+}: {
+  values: typeof defaultRolePermissions;
+  onChange: (key: keyof typeof defaultRolePermissions, checked: boolean) => void;
+}) {
+  return (
+    <div className="space-y-2 rounded-xl border border-[#ecf1ed] bg-[#f8faf8] p-4">
+      <p className="text-sm font-medium text-[#14201a]">Permissions</p>
+      <div className="grid gap-2 sm:grid-cols-2">
+        {PERMISSION_FIELDS.map(({ key, label, description }) => (
+          <label
+            key={key}
+            className="flex cursor-pointer items-start gap-2.5 rounded-lg border border-[#ecf1ed] bg-white px-3 py-2.5 transition hover:border-[#0b6e4f]/30"
+          >
+            <input
+              type="checkbox"
+              className="mt-0.5 cursor-pointer rounded border-[#d8e0d9] text-[#0b6e4f] focus:ring-[#0b6e4f]/20"
+              checked={values[key]}
+              onChange={(e) => onChange(key, e.target.checked)}
+            />
+            <span>
+              <span className="block text-sm font-medium text-[#14201a]">{label}</span>
+              <span className="block text-xs text-[#5c6b63]">{description}</span>
+            </span>
+          </label>
+        ))}
+      </div>
+    </div>
+  );
 }
 
 function statusVariant(status?: string) {
@@ -67,7 +140,10 @@ export default function ConfigurationPage() {
   const [pagination, setPagination] = useState({ count: 0, total_pages: 1, current_page: 1 });
   const [showUserForm, setShowUserForm] = useState(false);
   const [showRoleForm, setShowRoleForm] = useState(false);
+  const [editingRole, setEditingRole] = useState<Role | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [rolePermissions, setRolePermissions] = useState(defaultRolePermissions);
+  const [editPermissions, setEditPermissions] = useState(defaultRolePermissions);
   const rolesPagination = useClientPagination(roles, 10);
 
   const userForm = useForm<UserForm>({ defaultValues: { approved: "true", role_id: "" } });
@@ -144,9 +220,41 @@ export default function ConfigurationPage() {
     setError("");
     setSubmitting(true);
     try {
-      await createRole(data);
+      await createRole({
+        name: data.name,
+        code: data.code,
+        description: data.description,
+        ...rolePermissions,
+      });
       setShowRoleForm(false);
       roleForm.reset();
+      setRolePermissions(defaultRolePermissions);
+      refreshRoles();
+    } catch (err) {
+      setError(getErrorMessage(err));
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const openEditRole = (role: Role) => {
+    setEditingRole(role);
+    setEditPermissions({
+      can_manage_users: role.can_manage_users,
+      can_manage_config: role.can_manage_config,
+      can_manage_inventory: role.can_manage_inventory,
+      can_manage_orders: role.can_manage_orders,
+      can_view_reports: role.can_view_reports,
+    });
+  };
+
+  const onUpdateRole = async () => {
+    if (!editingRole) return;
+    setError("");
+    setSubmitting(true);
+    try {
+      await updateRole(editingRole.id, editPermissions);
+      setEditingRole(null);
       refreshRoles();
     } catch (err) {
       setError(getErrorMessage(err));
@@ -285,7 +393,10 @@ export default function ConfigurationPage() {
 
       <Modal
         open={showRoleForm}
-        onClose={() => setShowRoleForm(false)}
+        onClose={() => {
+          setShowRoleForm(false);
+          setRolePermissions(defaultRolePermissions);
+        }}
         title="Create Role"
         description="Define a custom access role for your team."
       >
@@ -293,11 +404,56 @@ export default function ConfigurationPage() {
           <Input label="Name" {...roleForm.register("name", { required: true })} />
           <Input label="Code" placeholder="SALES_LEAD" {...roleForm.register("code", { required: true })} />
           <Input label="Description" {...roleForm.register("description")} />
+          <PermissionCheckboxes
+            values={rolePermissions}
+            onChange={(key, checked) =>
+              setRolePermissions((prev) => ({ ...prev, [key]: checked }))
+            }
+          />
           <div className="flex justify-end gap-2 border-t border-[#ecf1ed] pt-4">
-            <Button type="button" variant="secondary" onClick={() => setShowRoleForm(false)}>Cancel</Button>
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => {
+                setShowRoleForm(false);
+                setRolePermissions(defaultRolePermissions);
+              }}
+            >
+              Cancel
+            </Button>
             <Button type="submit" loading={submitting}>Create</Button>
           </div>
         </form>
+      </Modal>
+
+      <Modal
+        open={!!editingRole}
+        onClose={() => setEditingRole(null)}
+        title={editingRole ? `Edit ${editingRole.name}` : "Edit role"}
+        description="Update permissions for this role."
+      >
+        {editingRole && (
+          <div className="space-y-4">
+            <div className="rounded-lg border border-[#ecf1ed] bg-[#f8faf8] px-4 py-3 text-sm">
+              <p className="font-medium text-[#14201a]">{editingRole.name}</p>
+              <p className="font-mono text-xs text-[#5c6b63]">{editingRole.code}</p>
+            </div>
+            <PermissionCheckboxes
+              values={editPermissions}
+              onChange={(key, checked) =>
+                setEditPermissions((prev) => ({ ...prev, [key]: checked }))
+              }
+            />
+            <div className="flex justify-end gap-2 border-t border-[#ecf1ed] pt-4">
+              <Button type="button" variant="secondary" onClick={() => setEditingRole(null)}>
+                Cancel
+              </Button>
+              <Button type="button" onClick={onUpdateRole} loading={submitting}>
+                Save permissions
+              </Button>
+            </div>
+          </div>
+        )}
       </Modal>
 
       <Card>
@@ -402,6 +558,7 @@ export default function ConfigurationPage() {
                         <td className="px-4 py-3">{role.user_count ?? 0}</td>
                         <td className="px-4 py-3">
                           <div className="flex flex-wrap gap-1">
+                            {role.can_manage_users && <Badge>Users</Badge>}
                             {role.can_manage_config && <Badge variant="success">Config</Badge>}
                             {role.can_manage_inventory && <Badge>Inventory</Badge>}
                             {role.can_manage_orders && <Badge>Orders</Badge>}
@@ -409,11 +566,16 @@ export default function ConfigurationPage() {
                           </div>
                         </td>
                         <td className="px-4 py-3">
-                          {!role.is_system && (
-                            <Button size="sm" variant="danger" onClick={() => handleDeleteRole(role.id)}>
-                              Delete
+                          <div className="flex flex-wrap gap-1.5">
+                            <Button size="sm" variant="secondary" onClick={() => openEditRole(role)}>
+                              Edit
                             </Button>
-                          )}
+                            {!role.is_system && (
+                              <Button size="sm" variant="danger" onClick={() => handleDeleteRole(role.id)}>
+                                Delete
+                              </Button>
+                            )}
+                          </div>
                         </td>
                       </tr>
                     ))}

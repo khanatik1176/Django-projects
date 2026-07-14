@@ -7,6 +7,7 @@ class PurchaseOrderItemSerializer(serializers.ModelSerializer):
 
     product_name = serializers.CharField(source="product.name", read_only=True)
     product_sku = serializers.CharField(source="product.sku", read_only=True)
+    is_perishable = serializers.BooleanField(source="product.is_perishable", read_only=True)
     quantity_remaining = serializers.DecimalField(
         max_digits=12,
         decimal_places=2,
@@ -25,6 +26,7 @@ class PurchaseOrderItemSerializer(serializers.ModelSerializer):
             "product",
             "product_name",
             "product_sku",
+            "is_perishable",
             "quantity_ordered",
             "quantity_received",
             "quantity_remaining",
@@ -120,3 +122,5 @@ class PurchaseOrderCreateSerializer(serializers.ModelSerializer):
 class PurchaseOrderReceiveSerializer(serializers.Serializer):
 
     quantity = serializers.DecimalField(max_digits=12, decimal_places=2)
+    expiry_date = serializers.DateField(required=False, allow_null=True)
+    batch_number = serializers.CharField(required=False, allow_blank=True, max_length=100)

@@ -50,29 +50,33 @@ const stats: {
   icon: React.ComponentType<{ className?: string }>;
   currency?: boolean;
   warn?: boolean;
+  href?: string;
 }[] = [
-  { key: "total_warehouses", label: "Warehouses", icon: Warehouse },
-  { key: "total_units_on_hand", label: "Units on Hand", icon: Boxes },
+  { key: "total_warehouses", label: "Warehouses", icon: Warehouse, href: "/warehouses" },
+  { key: "total_units_on_hand", label: "Units on Hand", icon: Boxes, href: "/stock" },
   {
     key: "total_inventory_value",
     label: "Inventory Value",
     icon: DollarSign,
     currency: true,
+    href: "/reports",
   },
   {
     key: "low_stock_items",
     label: "Low Stock Items",
     icon: AlertTriangle,
     warn: true,
+    href: "/stock",
   },
   {
     key: "expiring_soon_items",
     label: "Expiring Soon",
     icon: Clock,
     warn: true,
+    href: "/clearance",
   },
-  { key: "open_purchase_orders", label: "Open POs", icon: ShoppingCart },
-  { key: "open_sales_orders", label: "Open SOs", icon: Truck },
+  { key: "open_purchase_orders", label: "Open POs", icon: ShoppingCart, href: "/purchase-orders" },
+  { key: "open_sales_orders", label: "Open SOs", icon: Truck, href: "/sales-orders" },
 ];
 
 const CHART_COLORS = ["#0b6e4f", "#1a9d6c", "#5ee0b0", "#f59e0b", "#0ea5e9", "#8b5cf6"];
@@ -249,8 +253,32 @@ export default function DashboardPage() {
       </Modal>
 
       <div className="grid gap-3 sm:grid-cols-2 md:grid-cols-4 xl:grid-cols-7">
-        {stats.map(({ key, label, icon: Icon, currency, warn }, i) => {
+        {stats.map(({ key, label, icon: Icon, currency, warn, href }, i) => {
           const value = data?.[key] ?? 0;
+          const card = (
+            <Card className={`h-full ${href ? "transition hover:border-[#0b6e4f]/35 hover:shadow-sm" : ""}`}>
+              <CardBody className="p-3.5 sm:p-4">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <p className="text-xs text-[#5c6b63]">{label}</p>
+                    <p
+                      className={`mt-1.5 truncate text-xl font-semibold tracking-tight ${
+                        warn && Number(value) > 0
+                          ? "text-amber-700"
+                          : "text-[#14201a]"
+                      }`}
+                    >
+                      {currency ? formatCurrency(value) : formatNumber(value)}
+                    </p>
+                  </div>
+                  <div className="rounded-lg bg-[#e6f4ee] p-2 text-[#0b6e4f]">
+                    <Icon className="h-4 w-4" />
+                  </div>
+                </div>
+              </CardBody>
+            </Card>
+          );
+
           return (
             <motion.div
               key={key}
@@ -258,27 +286,13 @@ export default function DashboardPage() {
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: i * 0.04, duration: 0.3 }}
             >
-              <Card className="h-full">
-                <CardBody className="p-3.5 sm:p-4">
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="min-w-0">
-                      <p className="text-xs text-[#5c6b63]">{label}</p>
-                      <p
-                        className={`mt-1.5 truncate text-xl font-semibold tracking-tight ${
-                          warn && Number(value) > 0
-                            ? "text-amber-700"
-                            : "text-[#14201a]"
-                        }`}
-                      >
-                        {currency ? formatCurrency(value) : formatNumber(value)}
-                      </p>
-                    </div>
-                    <div className="rounded-lg bg-[#e6f4ee] p-2 text-[#0b6e4f]">
-                      <Icon className="h-4 w-4" />
-                    </div>
-                  </div>
-                </CardBody>
-              </Card>
+              {href ? (
+                <Link href={href} className="block cursor-pointer">
+                  {card}
+                </Link>
+              ) : (
+                card
+              )}
             </motion.div>
           );
         })}

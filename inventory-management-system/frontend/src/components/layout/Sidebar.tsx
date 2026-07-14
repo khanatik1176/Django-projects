@@ -19,6 +19,7 @@ import {
   Wallet,
   Banknote,
   ScrollText,
+  Receipt,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/providers/AuthProvider";
@@ -27,15 +28,16 @@ import { SidebarInsight } from "./SidebarInsight";
 const nav = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/pos", label: "Counter POS", icon: ScanLine, highlight: true },
+  { href: "/invoices", label: "Invoice Bank", icon: Receipt },
   { href: "/products", label: "Products", icon: Package },
   { href: "/warehouses", label: "Warehouses", icon: Warehouse },
   { href: "/stock", label: "Stock", icon: Boxes },
-  { href: "/clearance", label: "Clearance ছাড়", icon: Percent },
+  { href: "/clearance", label: "Clearance", icon: Percent },
   { href: "/transfers", label: "Transfers", icon: ArrowLeftRight },
   { href: "/movements", label: "Movements", icon: History },
   { href: "/purchase-orders", label: "Purchase Orders", icon: ShoppingCart },
   { href: "/sales-orders", label: "Sales Orders", icon: Truck },
-  { href: "/udhar", label: "উধার Khata", icon: Wallet },
+  { href: "/udhar", label: "Hal Khata", icon: Wallet },
   { href: "/finance", label: "Finance", icon: Banknote },
   { href: "/reports", label: "Reports", icon: BarChart3 },
   { href: "/activity-logs", label: "Activity Logs", icon: ScrollText },
