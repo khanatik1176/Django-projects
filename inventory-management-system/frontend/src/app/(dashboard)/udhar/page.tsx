@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
-import { History, Pencil, Plus, Wallet } from "lucide-react";
+import { Award, History, Pencil, Plus, Sparkles, Star, Wallet } from "lucide-react";
 import {
   collectPayment,
   createCustomer,
@@ -12,6 +12,14 @@ import {
   type CreditTransaction,
   type Customer,
 } from "@/lib/api/customers";
+import {
+  assignMembership,
+  adjustPoints,
+  getMemberships,
+  getPointsLedger,
+  type MembershipTier,
+  type PointsLedgerEntry,
+} from "@/lib/api/loyalty";
 import { PageHeader, LoadingState, EmptyState, Alert } from "@/components/ui/PageHeader";
 import { Card, CardBody } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";
@@ -21,7 +29,7 @@ import { Select } from "@/components/ui/Select";
 import { Modal } from "@/components/ui/Modal";
 import { Pagination } from "@/components/ui/Pagination";
 import { useServerPagination } from "@/hooks/useServerPagination";
-import { formatCurrency, formatDate } from "@/lib/utils";
+import { formatCurrency, formatDate, formatNumber } from "@/lib/utils";
 import { getErrorMessage } from "@/lib/api/client";
 
 interface CustomerForm {
@@ -46,6 +54,25 @@ function txnTypeVariant(type: string) {
   return "default" as const;
 }
 
+function pointsEntryVariant(type: string) {
+  if (type === "EARN" || type === "BONUS" || type === "UPGRADE") return "success" as const;
+  if (type === "REDEEM") return "warning" as const;
+  if (type === "ADJUST") return "info" as const;
+  return "default" as const;
+}
+
+function MembershipBadge({ customer }: { customer: Customer }) {
+  if (!customer.membership_name) return null;
+  return (
+    <span
+      className="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold text-white"
+      style={{ backgroundColor: customer.membership_color || "#0b6e4f" }}
+    >
+      {customer.membership_name}
+    </span>
+  );
+}
+
 export default function UdharPage() {
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [loading, setLoading] = useState(true);
@@ -60,6 +87,16 @@ export default function UdharPage() {
   const [ledgerLoading, setLedgerLoading] = useState(false);
   const [editLimitModal, setEditLimitModal] = useState<Customer | null>(null);
   const [editLimitValue, setEditLimitValue] = useState("");
+  const [membershipModal, setMembershipModal] = useState<Customer | null>(null);
+  const [memberships, setMemberships] = useState<MembershipTier[]>([]);
+  const [membershipsLoading, setMembershipsLoading] = useState(false);
+  const [selectedMembershipId, setSelectedMembershipId] = useState("");
+  const [pointsModal, setPointsModal] = useState<Customer | null>(null);
+  const [pointsAmount, setPointsAmount] = useState("");
+  const [pointsNotes, setPointsNotes] = useState("");
+  const [pointsHistoryCustomer, setPointsHistoryCustomer] = useState<Customer | null>(null);
+  const [pointsLedger, setPointsLedger] = useState<PointsLedgerEntry[]>([]);
+  const [pointsLedgerLoading, setPointsLedgerLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const { page, setPage, pageSize, onPageSizeChange, pagination, applyResponse } =
     useServerPagination(10);
@@ -104,6 +141,36 @@ export default function UdharPage() {
     }
   };
 
+  const openMembershipModal = async (customer: Customer) => {
+    setMembershipModal(customer);
+    setSelectedMembershipId(customer.membership ? String(customer.membership) : "");
+    setMembershipsLoading(true);
+    try {
+      const res = await getMemberships({ is_active: "true", page_size: "50" });
+      setMemberships(res.data.results);
+    } catch (err) {
+      setError(getErrorMessage(err));
+      setMembershipModal(null);
+    } finally {
+      setMembershipsLoading(false);
+    }
+  };
+
+  const openPointsHistory = async (customer: Customer) => {
+    setPointsHistoryCustomer(customer);
+    setPointsLedger([]);
+    setPointsLedgerLoading(true);
+    try {
+      const res = await getPointsLedger(customer.id);
+      setPointsLedger(res.data);
+    } catch (err) {
+      setError(getErrorMessage(err));
+      setPointsHistoryCustomer(null);
+    } finally {
+      setPointsLedgerLoading(false);
+    }
+  };
+
   const onCreate = async (data: CustomerForm) => {
     setSubmitting(true);
     try {
@@ -143,6 +210,44 @@ export default function UdharPage() {
       setSuccess(`Credit limit updated for ${editLimitModal.name}`);
       setEditLimitModal(null);
       setEditLimitValue("");
+      load();
+    } catch (err) {
+      setError(getErrorMessage(err));
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const onAssignMembership = async () => {
+    if (!membershipModal) return;
+    setSubmitting(true);
+    try {
+      const membershipId = selectedMembershipId ? Number(selectedMembershipId) : null;
+      await assignMembership(membershipModal.id, membershipId);
+      setSuccess(
+        membershipId
+          ? `Membership assigned to ${membershipModal.name}`
+          : `Membership removed from ${membershipModal.name}`,
+      );
+      setMembershipModal(null);
+      setSelectedMembershipId("");
+      load();
+    } catch (err) {
+      setError(getErrorMessage(err));
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const onAdjustPoints = async () => {
+    if (!pointsModal || !pointsAmount) return;
+    setSubmitting(true);
+    try {
+      await adjustPoints(pointsModal.id, Number(pointsAmount), pointsNotes || undefined);
+      setSuccess(`Points adjusted for ${pointsModal.name}`);
+      setPointsModal(null);
+      setPointsAmount("");
+      setPointsNotes("");
       load();
     } catch (err) {
       setError(getErrorMessage(err));
@@ -239,6 +344,12 @@ export default function UdharPage() {
         <div className="space-y-4">
           <p className="text-sm text-[#5c6b63]">
             Current limit: <strong>{formatCurrency(editLimitModal?.credit_limit ?? 0)}</strong>
+            {editLimitModal?.effective_credit_limit &&
+              editLimitModal.effective_credit_limit !== editLimitModal.credit_limit && (
+                <span className="ml-2 text-[#0b6e4f]">
+                  (effective {formatCurrency(editLimitModal.effective_credit_limit)})
+                </span>
+              )}
           </p>
           <Input
             label="New credit limit (BDT)"
@@ -254,12 +365,88 @@ export default function UdharPage() {
       </Modal>
 
       <Modal
+        open={!!membershipModal}
+        onClose={() => setMembershipModal(null)}
+        title={`Assign membership — ${membershipModal?.name}`}
+      >
+        <div className="space-y-4">
+          {membershipModal?.membership_name && (
+            <p className="text-sm text-[#5c6b63]">
+              Current: <MembershipBadge customer={membershipModal} />
+            </p>
+          )}
+          <Select
+            label="Membership tier"
+            value={selectedMembershipId}
+            onChange={(e) => setSelectedMembershipId(e.target.value)}
+            disabled={membershipsLoading}
+            options={[
+              { value: "", label: membershipsLoading ? "Loading…" : "No membership" },
+              ...memberships.map((m) => ({
+                value: m.id,
+                label: `${m.name} (${m.discount_percent}% off · ${formatNumber(m.points_per_hundred)} pts/৳100)`,
+              })),
+            ]}
+          />
+          <div className="flex justify-end gap-2">
+            <Button variant="secondary" onClick={() => setMembershipModal(null)}>Cancel</Button>
+            <Button loading={submitting} onClick={onAssignMembership}>Save</Button>
+          </div>
+        </div>
+      </Modal>
+
+      <Modal
+        open={!!pointsModal}
+        onClose={() => {
+          setPointsModal(null);
+          setPointsAmount("");
+          setPointsNotes("");
+        }}
+        title={`Adjust points — ${pointsModal?.name}`}
+      >
+        <div className="space-y-4">
+          <p className="text-sm text-[#5c6b63]">
+            Current balance:{" "}
+            <strong>{formatNumber(pointsModal?.loyalty_points ?? 0)} pts</strong>
+          </p>
+          <Input
+            label="Points adjustment (+ add / − deduct)"
+            type="number"
+            value={pointsAmount}
+            onChange={(e) => setPointsAmount(e.target.value)}
+            placeholder="e.g. 50 or -20"
+          />
+          <Input
+            label="Notes (optional)"
+            value={pointsNotes}
+            onChange={(e) => setPointsNotes(e.target.value)}
+            placeholder="Reason for adjustment"
+          />
+          <div className="flex justify-end gap-2">
+            <Button
+              variant="secondary"
+              onClick={() => {
+                setPointsModal(null);
+                setPointsAmount("");
+                setPointsNotes("");
+              }}
+            >
+              Cancel
+            </Button>
+            <Button loading={submitting} onClick={onAdjustPoints}>Adjust</Button>
+          </div>
+        </div>
+      </Modal>
+
+      <Modal
         open={!!ledgerCustomer}
         onClose={() => setLedgerCustomer(null)}
-        title={`Ledger — ${ledgerCustomer?.name}`}
+        title={`Credit ledger — ${ledgerCustomer?.name}`}
         description={
           ledgerCustomer
-            ? `Balance: ${formatCurrency(ledgerCustomer.credit_balance)} · Limit: ${formatCurrency(ledgerCustomer.credit_limit)}`
+            ? `Balance: ${formatCurrency(ledgerCustomer.credit_balance)} · Limit: ${formatCurrency(
+                ledgerCustomer.effective_credit_limit ?? ledgerCustomer.credit_limit,
+              )}`
             : undefined
         }
         size="xl"
@@ -300,6 +487,58 @@ export default function UdharPage() {
         )}
       </Modal>
 
+      <Modal
+        open={!!pointsHistoryCustomer}
+        onClose={() => setPointsHistoryCustomer(null)}
+        title={`Points history — ${pointsHistoryCustomer?.name}`}
+        description={
+          pointsHistoryCustomer
+            ? `Balance: ${formatNumber(pointsHistoryCustomer.loyalty_points ?? 0)} pts · Lifetime: ${formatNumber(pointsHistoryCustomer.lifetime_points ?? 0)} pts`
+            : undefined
+        }
+        size="xl"
+      >
+        {pointsLedgerLoading ? (
+          <LoadingState />
+        ) : pointsLedger.length === 0 ? (
+          <EmptyState title="No points activity" description="Earnings, redemptions, and adjustments will appear here." />
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[640px] text-sm">
+              <thead>
+                <tr className="border-b border-[#ecf1ed] text-left text-[#5c6b63]">
+                  <th className="pb-2 pr-4 font-medium">Date</th>
+                  <th className="pb-2 pr-4 font-medium">Type</th>
+                  <th className="pb-2 pr-4 font-medium">Points</th>
+                  <th className="pb-2 pr-4 font-medium">Balance after</th>
+                  <th className="pb-2 font-medium">Notes</th>
+                </tr>
+              </thead>
+              <tbody>
+                {pointsLedger.map((entry) => (
+                  <tr key={entry.id} className="border-b border-[#f4f6f3]">
+                    <td className="py-2 pr-4 text-[#5c6b63]">{formatDate(entry.created_at)}</td>
+                    <td className="py-2 pr-4">
+                      <Badge variant={pointsEntryVariant(entry.entry_type)}>
+                        {entry.entry_type}
+                      </Badge>
+                    </td>
+                    <td className={`py-2 pr-4 font-medium ${entry.points >= 0 ? "text-[#0b6e4f]" : "text-rose-700"}`}>
+                      {entry.points >= 0 ? "+" : ""}{formatNumber(entry.points)}
+                    </td>
+                    <td className="py-2 pr-4">{formatNumber(entry.balance_after)}</td>
+                    <td className="py-2 text-[#5c6b63]">
+                      {entry.offer_title ? `${entry.offer_title} — ` : ""}
+                      {entry.notes || "—"}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Modal>
+
       <Card>
         <CardBody className="p-0">
           {loading ? <LoadingState /> : customers.length === 0 ? (
@@ -313,6 +552,7 @@ export default function UdharPage() {
                     <th className="px-4 py-3">Phone</th>
                     <th className="px-4 py-3">Due</th>
                     <th className="px-4 py-3">Limit</th>
+                    <th className="px-4 py-3">Points</th>
                     <th className="px-4 py-3">Status</th>
                     <th className="px-4 py-3">Actions</th>
                   </tr>
@@ -324,12 +564,36 @@ export default function UdharPage() {
                       className="cursor-pointer border-b border-[#f4f6f3] hover:bg-[#f8faf8]"
                       onClick={() => openLedger(c)}
                     >
-                      <td className="px-4 py-3 font-medium">{c.name}</td>
+                      <td className="px-4 py-3">
+                        <p className="font-medium">{c.name}</p>
+                        {c.membership_name && (
+                          <div className="mt-1">
+                            <MembershipBadge customer={c} />
+                          </div>
+                        )}
+                      </td>
                       <td className="px-4 py-3">{c.phone || "—"}</td>
                       <td className="px-4 py-3 font-semibold text-rose-700">
                         {formatCurrency(c.credit_balance)}
                       </td>
-                      <td className="px-4 py-3">{formatCurrency(c.credit_limit)}</td>
+                      <td className="px-4 py-3">
+                        {c.effective_credit_limit &&
+                        c.effective_credit_limit !== c.credit_limit ? (
+                          <div>
+                            <p>{formatCurrency(c.effective_credit_limit)}</p>
+                            <p className="text-xs text-[#5c6b63]">
+                              base {formatCurrency(c.credit_limit)}
+                            </p>
+                          </div>
+                        ) : (
+                          formatCurrency(c.credit_limit)
+                        )}
+                      </td>
+                      <td className="px-4 py-3">
+                        <span className="font-medium text-[#0b6e4f]">
+                          {formatNumber(c.loyalty_points ?? 0)}
+                        </span>
+                      </td>
                       <td className="px-4 py-3">
                         {Number(c.credit_balance) > 0 ? (
                           <Badge variant="warning">Has due</Badge>
@@ -341,7 +605,25 @@ export default function UdharPage() {
                         <div className="flex flex-wrap gap-1" onClick={(e) => e.stopPropagation()}>
                           <Button size="sm" variant="secondary" onClick={() => openLedger(c)}>
                             <History className="h-3.5 w-3.5" />
-                            History
+                            Credit
+                          </Button>
+                          <Button size="sm" variant="secondary" onClick={() => openPointsHistory(c)}>
+                            <Star className="h-3.5 w-3.5" />
+                            Points
+                          </Button>
+                          <Button size="sm" variant="ghost" onClick={() => openMembershipModal(c)}>
+                            <Award className="h-3.5 w-3.5" />
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => {
+                              setPointsModal(c);
+                              setPointsAmount("");
+                              setPointsNotes("");
+                            }}
+                          >
+                            <Sparkles className="h-3.5 w-3.5" />
                           </Button>
                           <Button
                             size="sm"

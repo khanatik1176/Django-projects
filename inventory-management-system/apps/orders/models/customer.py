@@ -21,6 +21,19 @@ class Customer(models.Model):
         decimal_places=2,
         default=Decimal("5000"),
     )
+    membership = models.ForeignKey(
+        "orders.MembershipTier",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="customers",
+    )
+    loyalty_points = models.PositiveIntegerField(default=0)
+    lifetime_points = models.PositiveIntegerField(
+        default=0,
+        help_text="Total points ever earned — used for auto tier upgrades.",
+    )
+    membership_joined_at = models.DateTimeField(null=True, blank=True)
     is_active = models.BooleanField(default=True)
     notes = models.TextField(blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -32,6 +45,15 @@ class Customer(models.Model):
 
     def __str__(self):
         return f"{self.name} ({self.phone or 'no phone'})"
+
+    @property
+    def effective_credit_limit(self):
+        bonus = (
+            self.membership.credit_limit_bonus
+            if self.membership_id and self.membership
+            else Decimal("0")
+        )
+        return self.credit_limit + bonus
 
 
 class CreditTransactionType(models.TextChoices):

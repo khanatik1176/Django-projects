@@ -19,11 +19,11 @@ class CreditService:
         customer = Customer.objects.select_for_update().get(pk=customer_id)
         new_balance = customer.credit_balance + amount
 
-        if customer.credit_limit > 0 and new_balance > customer.credit_limit:
+        if customer.effective_credit_limit > 0 and new_balance > customer.effective_credit_limit:
             raise ValidationError(
                 {
                     "credit_limit": (
-                        f"Credit limit exceeded. Limit: {customer.credit_limit}, "
+                        f"Credit limit exceeded. Limit: {customer.effective_credit_limit}, "
                         f"would become: {new_balance}."
                     )
                 }

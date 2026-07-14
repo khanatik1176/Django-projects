@@ -20,15 +20,17 @@ import {
   Banknote,
   ScrollText,
   Receipt,
+  Crown,
+  Users,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/providers/AuthProvider";
-import { SidebarInsight } from "./SidebarInsight";
 
 const nav = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/pos", label: "Counter POS", icon: ScanLine, highlight: true },
   { href: "/invoices", label: "Invoice Bank", icon: Receipt },
+  { href: "/customers", label: "Customers", icon: Users },
   { href: "/products", label: "Products", icon: Package },
   { href: "/warehouses", label: "Warehouses", icon: Warehouse },
   { href: "/stock", label: "Stock", icon: Boxes },
@@ -38,6 +40,7 @@ const nav = [
   { href: "/purchase-orders", label: "Purchase Orders", icon: ShoppingCart },
   { href: "/sales-orders", label: "Sales Orders", icon: Truck },
   { href: "/udhar", label: "Hal Khata", icon: Wallet },
+  { href: "/memberships", label: "Memberships", icon: Crown },
   { href: "/finance", label: "Finance", icon: Banknote },
   { href: "/reports", label: "Reports", icon: BarChart3 },
   { href: "/activity-logs", label: "Activity Logs", icon: ScrollText },
@@ -115,8 +118,6 @@ export function Sidebar({
           </Link>
         )}
       </nav>
-
-      <SidebarInsight />
     </>
   );
 

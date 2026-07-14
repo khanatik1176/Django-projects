@@ -6,7 +6,8 @@ import { useSearchParams } from "next/navigation";
 import { Barcode, CreditCard, FileText, Printer, ShoppingBag, Trash2 } from "lucide-react";
 import { getProductByBarcode, getProduct, getProducts } from "@/lib/api/products";
 import { getStock, getWarehouses } from "@/lib/api/inventory";
-import { getCustomers } from "@/lib/api/customers";
+import { getCustomers, getCustomerByPhone } from "@/lib/api/customers";
+import { getLoyaltyOffers } from "@/lib/api/loyalty";
 import { posCheckout } from "@/lib/api/extras";
 import { PageHeader, Alert, LoadingState } from "@/components/ui/PageHeader";
 import { Card, CardBody } from "@/components/ui/Card";
@@ -18,15 +19,23 @@ import {
   InvoiceDocument,
   invoiceFromPosCheckout,
 } from "@/components/invoices/InvoiceDocument";
-import { formatCurrency } from "@/lib/utils";
+import { formatCurrency, formatNumber } from "@/lib/utils";
 import type { Product, SalesOrder, Warehouse } from "@/lib/types";
 import type { Customer } from "@/lib/api/customers";
+import type { LoyaltyOffer } from "@/lib/api/loyalty";
 import { getErrorMessage } from "@/lib/api/client";
 
 interface CartLine {
   product: Product;
   quantity: number;
   unitPriceOverride?: string | null;
+}
+
+interface CheckoutSummary {
+  subtotal?: string;
+  membership_discount?: string;
+  offer_discount?: string;
+  points_earned?: number;
 }
 
 const payments = [
@@ -40,6 +49,92 @@ function lineUnitPrice(line: CartLine): number {
   return Number(line.unitPriceOverride ?? line.product.selling_price ?? 0);
 }
 
+function roundMoney(value: number): number {
+  return Math.round(value * 100) / 100;
+}
+
+function applyDiscount(subtotal: number, percent: number): { discount: number; after: number } {
+  if (percent <= 0) return { discount: 0, after: subtotal };
+  const discount = roundMoney((subtotal * percent) / 100);
+  return { discount, after: Math.max(0, roundMoney(subtotal - discount)) };
+}
+
+function offerDiscountPreview(offer: LoyaltyOffer, afterMembership: number): number {
+  const value = Number(offer.value || 0);
+  if (offer.offer_type === "PERCENT_OFF") {
+    return roundMoney((afterMembership * value) / 100);
+  }
+  if (offer.offer_type === "FIXED_OFF") {
+    return roundMoney(Math.min(afterMembership, value));
+  }
+  return 0;
+}
+
+function offerLabel(offer: LoyaltyOffer): string {
+  const cost =
+    offer.points_cost > 0 ? ` · ${formatNumber(offer.points_cost)} pts` : "";
+  if (offer.offer_type === "PERCENT_OFF") {
+    return `${offer.title} (${offer.value}% off${cost})`;
+  }
+  if (offer.offer_type === "FIXED_OFF") {
+    return `${offer.title} (${formatCurrency(offer.value)} off${cost})`;
+  }
+  if (offer.offer_type === "BONUS_POINTS") {
+    return `${offer.title} (+${formatNumber(offer.value)} bonus pts${cost})`;
+  }
+  return `${offer.title}${cost}`;
+}
+
+function MembershipBadge({ customer }: { customer: Customer }) {
+  if (!customer.membership_name) return null;
+  return (
+    <span
+      className="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold text-white"
+      style={{ backgroundColor: customer.membership_color || "#0b6e4f" }}
+    >
+      {customer.membership_name}
+    </span>
+  );
+}
+
+function CheckoutSummaryLines({ summary }: { summary: CheckoutSummary }) {
+  const hasDiscounts =
+    Number(summary.membership_discount || 0) > 0 ||
+    Number(summary.offer_discount || 0) > 0 ||
+    (summary.points_earned ?? 0) > 0;
+
+  if (!hasDiscounts && !summary.subtotal) return null;
+
+  return (
+    <div className="rounded-xl border border-[#ecf1ed] bg-[#f8faf8] px-3 py-2 text-sm space-y-1">
+      {summary.subtotal && (
+        <div className="flex justify-between text-[#5c6b63]">
+          <span>Subtotal</span>
+          <span>{formatCurrency(summary.subtotal)}</span>
+        </div>
+      )}
+      {Number(summary.membership_discount || 0) > 0 && (
+        <div className="flex justify-between text-[#0b6e4f]">
+          <span>Membership discount</span>
+          <span>−{formatCurrency(summary.membership_discount)}</span>
+        </div>
+      )}
+      {Number(summary.offer_discount || 0) > 0 && (
+        <div className="flex justify-between text-[#0b6e4f]">
+          <span>Offer discount</span>
+          <span>−{formatCurrency(summary.offer_discount)}</span>
+        </div>
+      )}
+      {(summary.points_earned ?? 0) > 0 && (
+        <div className="flex justify-between font-medium text-[#14201a]">
+          <span>Points earned</span>
+          <span>+{formatNumber(summary.points_earned)} pts</span>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function POSContent() {
   const searchParams = useSearchParams();
   const urlProcessed = useRef(false);
@@ -51,13 +146,64 @@ function POSContent() {
   const [cart, setCart] = useState<CartLine[]>([]);
   const [payment, setPayment] = useState<string>("CASH");
   const [customerId, setCustomerId] = useState("");
+  const [phoneLookup, setPhoneLookup] = useState("");
+  const [lookingUp, setLookingUp] = useState(false);
+  const [memberProfile, setMemberProfile] = useState<Customer | null>(null);
+  const [selectedOfferId, setSelectedOfferId] = useState("");
+  const [loyaltyOffers, setLoyaltyOffers] = useState<LoyaltyOffer[]>([]);
+  const [offersLoading, setOffersLoading] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+  const [checkoutSummary, setCheckoutSummary] = useState<CheckoutSummary | null>(null);
   const [lastInvoice, setLastInvoice] = useState<SalesOrder | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [availability, setAvailability] = useState<Record<number, string>>({});
   const [bootstrapping, setBootstrapping] = useState(true);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  const selectedCustomer = useMemo(() => {
+    if (memberProfile && String(memberProfile.id) === customerId) return memberProfile;
+    return customers.find((c) => String(c.id) === customerId) ?? null;
+  }, [customers, customerId, memberProfile]);
+
+  const applyCustomer = useCallback((customer: Customer) => {
+    setCustomers((prev) => {
+      const exists = prev.some((c) => c.id === customer.id);
+      if (exists) {
+        return prev.map((c) => (c.id === customer.id ? customer : c));
+      }
+      return [customer, ...prev];
+    });
+    setCustomerId(String(customer.id));
+    setMemberProfile(customer);
+    setPhoneLookup(customer.phone || "");
+  }, []);
+
+  const lookupByPhone = async () => {
+    const phone = phoneLookup.trim();
+    if (!phone) {
+      setError("Enter a customer phone number.");
+      return;
+    }
+    setLookingUp(true);
+    setError("");
+    setSuccess("");
+    try {
+      const res = await getCustomerByPhone(phone);
+      applyCustomer(res.data);
+      setSuccess(
+        res.data.membership_name
+          ? `Loaded ${res.data.name} · ${res.data.membership_name}`
+          : `Loaded ${res.data.name}`,
+      );
+    } catch (err) {
+      setError(getErrorMessage(err));
+      setMemberProfile(null);
+      setCustomerId("");
+    } finally {
+      setLookingUp(false);
+    }
+  };
 
   useEffect(() => {
     Promise.all([
@@ -70,6 +216,36 @@ function POSContent() {
       if (def) setWarehouseId(String(def.id));
     }).finally(() => setBootstrapping(false));
   }, []);
+
+  useEffect(() => {
+    setSelectedOfferId("");
+    if (!selectedCustomer?.membership) {
+      setLoyaltyOffers([]);
+      return;
+    }
+
+    let cancelled = false;
+    setOffersLoading(true);
+
+    getLoyaltyOffers({
+      for_membership: String(selectedCustomer.membership),
+      active_only: "true",
+      page_size: "50",
+    })
+      .then((res) => {
+        if (!cancelled) setLoyaltyOffers(res.data.results);
+      })
+      .catch(() => {
+        if (!cancelled) setLoyaltyOffers([]);
+      })
+      .finally(() => {
+        if (!cancelled) setOffersLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedCustomer?.membership, selectedCustomer?.id]);
 
   const addProductToCart = useCallback(
     (product: Product, qty = 1, unitPriceOverride?: string | null) => {
@@ -168,10 +344,48 @@ function POSContent() {
     };
   }, [warehouseId, cartProductIds, cart.length]);
 
-  const total = useMemo(
+  const subtotal = useMemo(
     () => cart.reduce((sum, line) => sum + line.quantity * lineUnitPrice(line), 0),
     [cart],
   );
+
+  const membershipPercent = Number(selectedCustomer?.membership_discount_percent || 0);
+
+  const { discount: membershipDiscount, after: afterMembership } = useMemo(
+    () => applyDiscount(subtotal, membershipPercent),
+    [subtotal, membershipPercent],
+  );
+
+  const selectedOffer = useMemo(
+    () => loyaltyOffers.find((o) => String(o.id) === selectedOfferId) ?? null,
+    [loyaltyOffers, selectedOfferId],
+  );
+
+  const offerDiscount = useMemo(
+    () => (selectedOffer ? offerDiscountPreview(selectedOffer, afterMembership) : 0),
+    [selectedOffer, afterMembership],
+  );
+
+  const payable = useMemo(
+    () => Math.max(0, roundMoney(afterMembership - offerDiscount)),
+    [afterMembership, offerDiscount],
+  );
+
+  const estimatedPoints = useMemo(() => {
+    if (!selectedCustomer?.membership) return 0;
+    const rate = Number(selectedCustomer.membership_points_per_hundred || 0);
+    if (rate <= 0 || payable <= 0) return 0;
+    return Math.floor((payable / 100) * rate);
+  }, [selectedCustomer, payable]);
+
+  const eligibleOffers = useMemo(() => {
+    const points = selectedCustomer?.loyalty_points ?? 0;
+    return loyaltyOffers.filter(
+      (o) =>
+        points >= o.min_points_balance &&
+        (o.points_cost <= 0 || points >= o.points_cost),
+    );
+  }, [loyaltyOffers, selectedCustomer?.loyalty_points]);
 
   const addProduct = useCallback(async (code: string) => {
     setError("");
@@ -204,12 +418,14 @@ function POSContent() {
     if (!warehouseId || cart.length === 0) return;
     setError("");
     setSuccess("");
+    setCheckoutSummary(null);
     setSubmitting(true);
     try {
       const res = await posCheckout({
         warehouse_id: Number(warehouseId),
         payment_method: payment,
-        customer_id: payment === "CREDIT" ? Number(customerId) : null,
+        customer_id: customerId ? Number(customerId) : null,
+        redeem_offer_id: selectedOfferId ? Number(selectedOfferId) : null,
         items: cart.map((l) => ({
           product_id: l.product.id,
           quantity: l.quantity,
@@ -217,10 +433,33 @@ function POSContent() {
         })),
       });
       const invoice = invoiceFromPosCheckout(res.data);
+      const summary: CheckoutSummary = {
+        subtotal: res.data.subtotal,
+        membership_discount: res.data.membership_discount,
+        offer_discount: res.data.offer_discount,
+        points_earned: res.data.points_earned,
+      };
+      setCheckoutSummary(summary);
       setLastInvoice(invoice);
-      setSuccess(`Invoice ${res.data.invoice_number || res.data.so_number} · ${formatCurrency(res.data.total)}`);
+
+      const parts = [
+        `Invoice ${res.data.invoice_number || res.data.so_number}`,
+        formatCurrency(res.data.total),
+      ];
+      if (Number(summary.membership_discount || 0) > 0) {
+        parts.push(`member −${formatCurrency(summary.membership_discount)}`);
+      }
+      if (Number(summary.offer_discount || 0) > 0) {
+        parts.push(`offer −${formatCurrency(summary.offer_discount)}`);
+      }
+      if ((summary.points_earned ?? 0) > 0) {
+        parts.push(`+${formatNumber(summary.points_earned)} pts`);
+      }
+      setSuccess(parts.join(" · "));
+
       setCart([]);
       setBarcode("");
+      setSelectedOfferId("");
       inputRef.current?.focus();
     } catch (err) {
       setError(getErrorMessage(err));
@@ -251,16 +490,26 @@ function POSContent() {
 
       <Modal
         open={!!lastInvoice}
-        onClose={() => setLastInvoice(null)}
+        onClose={() => {
+          setLastInvoice(null);
+          setCheckoutSummary(null);
+        }}
         title={`Invoice ${lastInvoice?.invoice_number || lastInvoice?.so_number || ""}`}
         description="Sale completed — print the bill or open it in Invoice Bank"
         size="xl"
       >
         {lastInvoice && (
           <div className="space-y-4">
+            {checkoutSummary && <CheckoutSummaryLines summary={checkoutSummary} />}
             <InvoiceDocument invoice={lastInvoice} compact />
             <div className="flex flex-wrap justify-end gap-2">
-              <Button variant="secondary" onClick={() => setLastInvoice(null)}>
+              <Button
+                variant="secondary"
+                onClick={() => {
+                  setLastInvoice(null);
+                  setCheckoutSummary(null);
+                }}
+              >
                 New sale
               </Button>
               <Link href={`/invoices/${lastInvoice.id}`}>
@@ -428,7 +677,161 @@ function POSContent() {
               <ShoppingBag className="h-5 w-5" />
               <h2 className="font-semibold text-[#14201a]">Checkout</h2>
             </div>
-            <p className="text-3xl font-bold text-[#14201a]">{formatCurrency(total)}</p>
+
+            <div className="space-y-1.5 text-sm">
+              <div className="flex justify-between text-[#5c6b63]">
+                <span>Subtotal</span>
+                <span>{formatCurrency(subtotal)}</span>
+              </div>
+              {membershipDiscount > 0 && (
+                <div className="flex justify-between text-[#0b6e4f]">
+                  <span>Membership ({membershipPercent}%)</span>
+                  <span>−{formatCurrency(membershipDiscount)}</span>
+                </div>
+              )}
+              {offerDiscount > 0 && (
+                <div className="flex justify-between text-[#0b6e4f]">
+                  <span>Offer discount</span>
+                  <span>−{formatCurrency(offerDiscount)}</span>
+                </div>
+              )}
+              <div className="flex justify-between border-t border-[#ecf1ed] pt-2 text-lg font-bold text-[#14201a]">
+                <span>Payable</span>
+                <span>{formatCurrency(payable)}</span>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <label className="block text-sm font-medium text-[#14201a]">
+                Customer phone
+              </label>
+              <div className="flex gap-2">
+                <Input
+                  placeholder="01XXXXXXXXX"
+                  value={phoneLookup}
+                  onChange={(e) => setPhoneLookup(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      void lookupByPhone();
+                    }
+                  }}
+                />
+                <Button
+                  type="button"
+                  variant="secondary"
+                  loading={lookingUp}
+                  onClick={() => void lookupByPhone()}
+                  className="shrink-0"
+                >
+                  Lookup
+                </Button>
+              </div>
+              <p className="text-xs text-[#5c6b63]">
+                Enter phone to load membership, points, discounts & udhar balance.
+              </p>
+            </div>
+
+            <Select
+              label={payment === "CREDIT" ? "Udhar customer (required)" : "Customer (optional)"}
+              value={customerId}
+              onChange={(e) => {
+                const next = e.target.value;
+                setCustomerId(next);
+                if (!next) {
+                  setMemberProfile(null);
+                  setPhoneLookup("");
+                  return;
+                }
+                const found = customers.find((c) => String(c.id) === next);
+                if (found) {
+                  setMemberProfile(found);
+                  setPhoneLookup(found.phone || "");
+                }
+              }}
+              options={[
+                { value: "", label: "Walk-in / no customer" },
+                ...customers.map((c) => ({
+                  value: c.id,
+                  label: `${c.name}${c.phone ? ` · ${c.phone}` : ""}${
+                    c.membership_name ? ` · ${c.membership_name}` : ""
+                  }${
+                    payment === "CREDIT" ? ` (due ${formatCurrency(c.credit_balance)})` : ""
+                  }`,
+                })),
+              ]}
+            />
+
+            {selectedCustomer && (
+              <div className="rounded-xl border border-[#ecf1ed] bg-[#f8faf8] p-3 space-y-2">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <p className="font-semibold text-[#14201a]">{selectedCustomer.name}</p>
+                    <p className="text-xs text-[#5c6b63]">
+                      {selectedCustomer.phone || "No phone"}
+                      {selectedCustomer.address ? ` · ${selectedCustomer.address}` : ""}
+                    </p>
+                  </div>
+                  <MembershipBadge customer={selectedCustomer} />
+                </div>
+                <div className="grid grid-cols-2 gap-2 text-xs text-[#5c6b63]">
+                  <div>
+                    Membership discount
+                    <p className="font-semibold text-[#0b6e4f]">
+                      {membershipPercent > 0 ? `${membershipPercent}%` : "—"}
+                    </p>
+                  </div>
+                  <div>
+                    Points balance
+                    <p className="font-semibold text-[#14201a]">
+                      {formatNumber(selectedCustomer.loyalty_points ?? 0)}
+                    </p>
+                  </div>
+                  <div>
+                    Lifetime points
+                    <p className="font-semibold text-[#14201a]">
+                      {formatNumber(selectedCustomer.lifetime_points ?? 0)}
+                    </p>
+                  </div>
+                  <div>
+                    Udhar due
+                    <p className="font-semibold text-[#14201a]">
+                      {formatCurrency(selectedCustomer.credit_balance)}
+                    </p>
+                  </div>
+                  <div className="col-span-2">
+                    Credit limit
+                    <p className="font-semibold text-[#14201a]">
+                      {formatCurrency(
+                        selectedCustomer.effective_credit_limit ||
+                          selectedCustomer.credit_limit,
+                      )}
+                    </p>
+                  </div>
+                  {estimatedPoints > 0 && (
+                    <div className="col-span-2 text-[#0b6e4f]">
+                      This sale earns ~{formatNumber(estimatedPoints)} pts
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {selectedCustomer?.membership && (
+              <Select
+                label="Redeem loyalty offer"
+                value={selectedOfferId}
+                onChange={(e) => setSelectedOfferId(e.target.value)}
+                disabled={offersLoading}
+                options={[
+                  { value: "", label: offersLoading ? "Loading offers…" : "No offer" },
+                  ...eligibleOffers.map((o) => ({
+                    value: o.id,
+                    label: offerLabel(o),
+                  })),
+                ]}
+              />
+            )}
 
             <div className="grid grid-cols-2 gap-2">
               {payments.map((p) => (
@@ -446,21 +849,6 @@ function POSContent() {
                 </button>
               ))}
             </div>
-
-            {payment === "CREDIT" && (
-              <Select
-                label="Udhar customer"
-                value={customerId}
-                onChange={(e) => setCustomerId(e.target.value)}
-                options={[
-                  { value: "", label: "Select customer..." },
-                  ...customers.map((c) => ({
-                    value: c.id,
-                    label: `${c.name} (due ${formatCurrency(c.credit_balance)})`,
-                  })),
-                ]}
-              />
-            )}
 
             <Button
               className="w-full"

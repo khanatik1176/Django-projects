@@ -1,28 +1,37 @@
 import { apiClient } from "./client";
 import type { ApiResponse } from "../types";
 
+export interface PosCheckoutResult {
+  id: number;
+  so_number: string;
+  invoice_number: string;
+  total: string;
+  subtotal?: string;
+  membership_discount?: string;
+  offer_discount?: string;
+  points_earned?: number;
+  payment_method: string;
+  item_count: number;
+  status: string;
+  customer_name: string;
+  customer_phone: string;
+  warehouse_name: string;
+  order_date?: string | null;
+  created_at?: string | null;
+  items: {
+    product_name: string;
+    product_sku: string;
+    quantity: string;
+    unit_price: string;
+    line_total: string;
+  }[];
+}
+
 export async function posCheckout(payload: Record<string, unknown>) {
-  const { data } = await apiClient.post<ApiResponse<{
-    id: number;
-    so_number: string;
-    invoice_number: string;
-    total: string;
-    payment_method: string;
-    item_count: number;
-    status: string;
-    customer_name: string;
-    customer_phone: string;
-    warehouse_name: string;
-    order_date?: string | null;
-    created_at?: string | null;
-    items: {
-      product_name: string;
-      product_sku: string;
-      quantity: string;
-      unit_price: string;
-      line_total: string;
-    }[];
-  }>>("/inventory/pos/checkout/", payload);
+  const { data } = await apiClient.post<ApiResponse<PosCheckoutResult>>(
+    "/inventory/pos/checkout/",
+    payload,
+  );
   return data;
 }
 

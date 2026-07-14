@@ -2,10 +2,17 @@ import { apiClient } from "./client";
 import type { ApiResponse, PaginatedData, Role, User } from "../types";
 
 export async function getRoles() {
-  const { data } = await apiClient.get<ApiResponse<{ results: Role[] }>>(
-    "/accounts/roles/",
-  );
-  return data;
+  const { data } = await apiClient.get<
+    ApiResponse<{ results: Role[] } | Role[]>
+  >("/accounts/roles/");
+  // Normalize both { results: [] } and bare array payloads
+  const payload = data.data;
+  const results = Array.isArray(payload)
+    ? payload
+    : Array.isArray(payload?.results)
+      ? payload.results
+      : [];
+  return { ...data, data: { results } };
 }
 
 export async function createRole(payload: {

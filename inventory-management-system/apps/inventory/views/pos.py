@@ -18,7 +18,10 @@ class POSCheckoutAPIView(APIView):
 
     @extend_schema(
         summary="Counter POS checkout",
-        description="Scan-and-sell checkout: confirms order, issues stock, supports cash/bKash/Nagad/udhar.",
+        description=(
+            "Scan-and-sell checkout with optional membership discount, "
+            "offer redemption, and loyalty points."
+        ),
         request=POSCheckoutSerializer,
     )
     def post(self, request):
@@ -35,6 +38,7 @@ class POSCheckoutAPIView(APIView):
             payment_method=data["payment_method"],
             customer_id=data.get("customer_id"),
             notes=data.get("notes", ""),
+            redeem_offer_id=data.get("redeem_offer_id"),
         )
         so = result["sales_order"]
         so = SalesOrder.objects.prefetch_related("items__product").select_related(
@@ -48,6 +52,10 @@ class POSCheckoutAPIView(APIView):
                 "so_number": so.so_number,
                 "invoice_number": so.so_number,
                 "total": str(result["total"]),
+                "subtotal": str(result["subtotal"]),
+                "membership_discount": str(result["membership_discount"]),
+                "offer_discount": str(result["offer_discount"]),
+                "points_earned": result["points_earned"],
                 "payment_method": result["payment_method"],
                 "item_count": result["item_count"],
                 "status": so.status,

@@ -155,6 +155,15 @@ export default function ConfigurationPage() {
     }
   }, [user, router]);
 
+  const loadRoles = useCallback(async () => {
+    try {
+      const res = await getRoles();
+      setRoles(res.data.results ?? []);
+    } catch (err) {
+      setError(getErrorMessage(err));
+    }
+  }, []);
+
   const loadUsers = useCallback(async (pageNum: number, size: number) => {
     setLoading(true);
     try {
@@ -172,21 +181,18 @@ export default function ConfigurationPage() {
     }
   }, []);
 
-  const loadRoles = useCallback(async () => {
-    setLoading(true);
-    try {
-      const res = await getRoles();
-      setRoles(res.data.results);
-    } catch (err) {
-      setError(getErrorMessage(err));
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+  useEffect(() => {
+    // Always load roles so user role dropdowns work on the Users tab
+    void loadRoles();
+  }, [loadRoles]);
 
   useEffect(() => {
-    if (tab === "users") loadUsers(page, pageSize);
-    else loadRoles();
+    if (tab === "users") {
+      void loadUsers(page, pageSize);
+    } else {
+      setLoading(true);
+      loadRoles().finally(() => setLoading(false));
+    }
   }, [tab, page, pageSize, loadUsers, loadRoles]);
 
   const refreshUsers = () => loadUsers(page, pageSize);

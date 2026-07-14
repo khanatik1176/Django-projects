@@ -3,6 +3,12 @@ from .purchase_order_item import PurchaseOrderItem
 from .sales_order import SalesOrder, SalesOrderStatus
 from .sales_order_item import SalesOrderItem
 from .customer import Customer, CreditTransaction, CreditTransactionType
+from .loyalty import (
+    MembershipTier,
+    LoyaltyOffer,
+    PointsLedger,
+    PointsLedgerType,
+)
 
 __all__ = [
     "PurchaseOrder",
@@ -14,4 +20,8 @@ __all__ = [
     "Customer",
     "CreditTransaction",
     "CreditTransactionType",
+    "MembershipTier",
+    "LoyaltyOffer",
+    "PointsLedger",
+    "PointsLedgerType",
 ]
